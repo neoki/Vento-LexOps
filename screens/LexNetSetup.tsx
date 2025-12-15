@@ -84,7 +84,7 @@ const LexNetSetup: React.FC = () => {
                     <h3 className="text-lg font-bold text-gray-900">Vincular Nuevo Agente</h3>
                     <p className="text-sm text-gray-500">
                         1. Abre el Agente Vento en tu escritorio.<br/>
-                        2. Ve a "Configuración" > "Vincular Web".<br/>
+                        2. Ve a &quot;Configuración&quot; {'>'} &quot;Vincular Web&quot;.<br/>
                         3. Introduce el código de 6 dígitos que aparece en pantalla.
                     </p>
                     <div className="flex gap-2 justify-center pt-2">

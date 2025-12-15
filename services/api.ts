@@ -2,7 +2,7 @@
 import { AgentLog, NotificationPackage, StatMetric } from '../types';
 import { MOCK_NOTIFICATIONS, MOCK_AGENT_LOGS } from '../constants';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = '/api';
 
 // Helper to handle fetch errors gracefully and fallback to mocks if server is down
 async function fetchWithFallback<T>(endpoint: string, fallbackData: T): Promise<T> {

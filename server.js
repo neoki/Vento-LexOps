@@ -1,13 +1,22 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3001;
+const isProduction = process.env.NODE_ENV === 'production';
+const PORT = isProduction ? 5000 : 3001;
+const HOST = '0.0.0.0';
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
+
+if (isProduction) {
+    app.use(express.static(path.join(__dirname, 'dist')));
+}
 
 // --- IN-MEMORY DATABASE (Simulating Postgres) ---
 let agents = {
@@ -102,6 +111,12 @@ app.post('/api/agent/notification', (req, res) => {
     res.json({ success: true, id: newNotif.id });
 });
 
-app.listen(PORT, () => {
-    console.log(`Vento LexOps Backend running at http://localhost:${PORT}`);
+if (isProduction) {
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    });
+}
+
+app.listen(PORT, HOST, () => {
+    console.log(`Vento LexOps Backend running at http://${HOST}:${PORT}`);
 });
