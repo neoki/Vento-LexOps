@@ -1,10 +1,13 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { db, pool } from './server/db';
 import { setupAuth, requireAuth, requireRole } from './server/auth';
 import { analyzeDocument, updateUserAISettings, getAISettings } from './server/ai-service';
+import * as msGraph from './server/microsoft-graph';
+import * as inventoApi from './server/invento-api';
 import { notifications, agents, agentLogs, users, userAiSettings, auditLogs } from './shared/schema';
 import { eq, desc, sql, and } from 'drizzle-orm';
 
@@ -397,6 +400,175 @@ app.get('/api/audit', requireAuth, requireRole('ADMIN'), async (req, res) => {
   } catch (error) {
     console.error('Audit logs error:', error);
     res.status(500).json({ error: 'Error obteniendo logs de auditoría' });
+  }
+});
+
+const oauthStates = new Map<string, { userId: number; timestamp: number }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [state, data] of oauthStates) {
+    if (now - data.timestamp > 10 * 60 * 1000) {
+      oauthStates.delete(state);
+    }
+  }
+}, 60000);
+
+app.get('/api/integrations/microsoft/auth-url', requireAuth, (req, res) => {
+  try {
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/microsoft/callback`;
+    const state = crypto.randomBytes(32).toString('hex');
+    
+    oauthStates.set(state, { userId: req.user!.id, timestamp: Date.now() });
+    
+    const authUrl = msGraph.getAuthUrl(redirectUri, state);
+    res.json({ authUrl });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/microsoft/callback', async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    
+    if (!state || typeof state !== 'string') {
+      return res.status(400).json({ error: 'Estado de OAuth inválido' });
+    }
+    
+    const stateData = oauthStates.get(state);
+    if (!stateData) {
+      return res.status(400).json({ error: 'Estado de OAuth expirado o inválido' });
+    }
+    
+    oauthStates.delete(state);
+    
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/microsoft/callback`;
+    const tokens = await msGraph.exchangeCodeForTokens(code as string, redirectUri);
+    await msGraph.saveTokens(stateData.userId, tokens);
+    
+    await logAudit(
+      stateData.userId,
+      'MICROSOFT_GRAPH_LINKED',
+      'integration',
+      'microsoft',
+      { linkedAt: new Date().toISOString() },
+      req.ip
+    );
+    
+    res.redirect('/#settings');
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/microsoft/status', requireAuth, async (req, res) => {
+  try {
+    const hasIntegration = await msGraph.hasGraphIntegration(req.user!.id);
+    res.json({ connected: hasIntegration });
+  } catch (error) {
+    res.json({ connected: false });
+  }
+});
+
+app.get('/api/integrations/microsoft/calendar', requireAuth, async (req, res) => {
+  try {
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + 1);
+    
+    const events = await msGraph.getCalendarEvents(req.user!.id, startDate, endDate);
+    res.json(events);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/integrations/microsoft/calendar', requireAuth, async (req, res) => {
+  try {
+    const { subject, start, end, location, attendees } = req.body;
+    const event = await msGraph.createCalendarEvent(req.user!.id, {
+      subject,
+      start: new Date(start),
+      end: new Date(end),
+      location,
+      attendees
+    });
+    res.json(event);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/invento/status', requireAuth, async (req, res) => {
+  try {
+    const hasIntegration = await inventoApi.hasInventoIntegration(req.user!.id);
+    res.json({ connected: hasIntegration });
+  } catch (error) {
+    res.json({ connected: false });
+  }
+});
+
+app.post('/api/integrations/invento/api-key', requireAuth, async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    await inventoApi.saveInventoApiKey(req.user!.id, apiKey);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/integrations/invento/cases', requireAuth, async (req, res) => {
+  try {
+    const { reference, client, court, procedureNumber } = req.query;
+    const cases = await inventoApi.searchCases(req.user!.id, {
+      reference: reference as string,
+      client: client as string,
+      court: court as string,
+      procedureNumber: procedureNumber as string
+    });
+    res.json(cases);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/notifications/:id/sync-invento', requireAuth, async (req, res) => {
+  try {
+    const [notification] = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.id, parseInt(req.params.id)))
+      .limit(1);
+
+    if (!notification) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+
+    const result = await inventoApi.syncNotificationWithInvento(req.user!.id, notification);
+
+    await db
+      .update(notifications)
+      .set({
+        inventoCaseId: result.caseId,
+        status: 'SYNCED',
+        updatedAt: new Date()
+      })
+      .where(eq(notifications.id, notification.id));
+
+    await logAudit(
+      req.user!.id,
+      'SYNC_INVENTO',
+      'notification',
+      req.params.id,
+      { caseId: result.caseId, isNewCase: result.isNewCase },
+      req.ip
+    );
+
+    res.json({ success: true, caseId: result.caseId, isNewCase: result.isNewCase });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
