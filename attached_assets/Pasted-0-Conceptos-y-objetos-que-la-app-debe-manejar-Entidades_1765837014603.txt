@@ -1,0 +1,438 @@
+0) Conceptos y objetos que la app debe manejar
+
+Entidades principales
+
+Abogado: id, nombre, oficina (JLC/JLV/OU), email, teamsId, calendario objetivo (agenda común AC/OU o Vigo), “color/categoría”.
+
+Cuenta LexNET del abogado: método de acceso (certificado/tarjeta/credenciales permitidas), estado, última ejecución OK, última descarga.
+
+Paquete LexNET (NotificationPackage): lo descargado desde LexNET (ZIP + justificante + metadatos + hash).
+
+Notificación: cada elemento dentro del paquete: PDF principal + anexos + metadatos (juzgado, autos, fecha).
+
+Caso/Expediente: mapeo entre “lo que dice la notificación” y el expediente en Invento (expedienteId + carpeta/instancia).
+
+Acciones: cosas a hacer a partir de la notificación:
+
+Guardar en Invento,
+
+Crear plazos,
+
+Crear señalamientos,
+
+Enviar email a letrado,
+
+Enviar email a cliente,
+
+Solicitar/seguir poder,
+
+Descargar enlaces (grabación/expte administrativo),
+
+Detectar colisiones.
+
+Reglas internas configurables
+
+Cómputo de plazos (hábiles, festivos, agosto y excepciones).
+
+Plantillas de email (letrado/cliente/poder).
+
+Mapeo color/categoría por letrado.
+
+Oficinas/agenda común (JLC incluye OU; JLV separada).
+
+Triage: quién resuelve dudas (p.ej., Laura/Paula/Eva).
+
+1) Configuración inicial (setup)
+1.1 Alta de letrados y administrativas
+
+Crear registro de cada miembro (nombre, email corporativo, oficina, rol).
+
+Asociar agenda común objetivo:
+
+JLC (incluye OU) o JLV (Vigo).
+
+Definir “color/categoría” por letrado (ver apartado de colores al final).
+
+1.2 Conexiones
+
+Conectar con:
+
+Invento API (base URL, token/credenciales).
+
+Microsoft 365 (Outlook/Graph + Teams) con permisos mínimos necesarios.
+
+1.3 Alta de cuentas LexNET por letrado
+
+Para cada letrado, registrar método de acceso:
+
+Si requiere certificado/tarjeta local: se registra en el Agente Windows (no en la web).
+
+Probar “login + listado bandeja” y guardar estado.
+
+2) Ejecución diaria automática (job scheduler)
+
+La app debe ejecutar (al menos) 2 veces al día:
+
+Job mañana (p.ej. 08:00–09:00): descargar + registrar + agendar + avisar
+
+Job mediodía (p.ej. 13:30–14:30): repetir para captar nuevas notificaciones antes de las 15:00
+
+Cada ejecución corre “por abogado”, y no mezcla identidades.
+
+3) Flujo por abogado (LexNET → paquetes)
+3.1 Entrar a LexNET
+
+El agente selecciona el certificado del abogado X.
+
+Verifica identidad (p.ej. nombre/NIF mostrado en LexNET).
+
+Registra en log: inicio de sesión OK.
+
+Errores
+
+Certificado no disponible → alerta.
+
+PIN/lector/token no disponible → alerta a responsable TI + administrativa.
+
+3.2 Revisar rechazados (diario)
+
+Ir a “rechazados”.
+
+Para cada rechazado:
+
+extraer motivo (texto / código).
+
+marcar en sistema como “RechazadoDetectado”.
+
+si es reintento automático permitido: re-presentar.
+
+si requiere humano: crear tarea “Revisar rechazado” asignada al responsable (o al tutor).
+
+Salida: lista de rechazados gestionados + trazabilidad.
+
+3.3 Descargar notificaciones nuevas
+
+Ir a bandeja de entrada / notificaciones pendientes.
+
+Determinar “no descargadas aún” (por ID LexNET o fecha/estado).
+
+Descargar en ZIP (si varias, ZIP por lote o por notificación).
+
+Descargar/generar justificante de descarga asociado.
+
+Guardar en disco en ruta estructurada:
+/lexnet/YYYY-MM-DD/abogadoX/loteN/
+
+Calcular hashes (zip + justificante + pdfs) para deduplicar.
+
+Subir el paquete al backend (o a almacenamiento central) y registrar en DB:
+
+packageId, abogado, timestamp, ids LexNET, hashes, rutas.
+
+Regla crítica: si falta justificante → el paquete queda en estado INCOMPLETO y dispara alerta.
+
+4) Ingesta y “lectura” del paquete (backend)
+4.1 Descomprimir y normalizar
+
+Abrir ZIP.
+
+Enumerar archivos: pdf principal + anexos.
+
+Detectar “documento principal” (heurística: nombre/tamaño/primera página).
+
+Extraer texto del PDF (si no es texto seleccionable, marcar “requiere OCR/manual”).
+
+4.2 Extraer metadatos (IA + reglas)
+
+Extraer/normalizar:
+
+juzgado,
+
+nº autos,
+
+tipo procedimiento (PO/DSP/DOI/RSU/RCUD/ETJ…),
+
+partes (cliente/contrario),
+
+tipo de acto (señalamiento, sentencia, requerimiento…),
+
+fechas y horas (juicio, vistas, comparecencias),
+
+plazos (N días hábiles / naturales + “desde el día siguiente”).
+
+Guardar “evidencias” (fragmentos de texto) y confianza.
+
+Salida: un objeto NotificationFacts con campos + confianza + evidencias.
+
+5) Matching con expediente Invento
+5.1 Buscar el expediente
+
+Intentar localizar expediente por:
+
+nº autos + juzgado,
+
+o por RSU/RCUD/ETJ si aparece,
+
+o por combinación cliente/contrario + oficina.
+
+Si encuentra 1 candidato con alta confianza → asignar automático.
+
+Si hay múltiples candidatos o baja confianza → enviar a TRIAGE.
+
+5.2 TRIAGE (humano-en-el-bucle)
+
+En la bandeja TRIAGE, la administrativa ve:
+
+PDF principal,
+
+metadatos extraídos,
+
+sugerencias de expediente,
+
+botón “Asignar expediente correcto” o “Crear nuevo”.
+
+Una vez resuelto, el sistema guarda la decisión como regla/aprendizaje (para mejorar futuros matches).
+
+6) Escribir en Invento (por API)
+
+Para cada notificación ya asignada a un expediente:
+
+6.1 Determinar instancia/carpeta
+
+Decidir en qué “instancia” guardar:
+
+1ª instancia (hasta sentencia),
+
+2ª RSU,
+
+3ª RCUD,
+
+ejecución.
+
+Si la notificación abre nueva instancia (p.ej. anuncio RSU) → crear carpeta/estructura si falta y reiniciar numeración.
+
+6.2 Numeración y nombres
+
+Obtener el siguiente número correlativo de esa instancia (01, 02, …).
+
+Renombrar archivos según reglas:
+
+01 SEÑALAMIENTO JUICIO 25-09-2024
+
+01 RESOLUCION ...
+
+01 JUSTIFICANTE LEXNET
+
+01 ANEXO ...
+
+Subir a Invento:
+
+PDF(s),
+
+anexos,
+
+justificante,
+
+opcional ZIP completo.
+
+6.3 Notas/Llamadas
+
+Si hay señalamiento: escribir en “Notas”:
+JUICIO: dd/mm/aaaa – hh:mm
+
+Si hay SMAC: SMAC: dd/mm/aaaa – hh:mm
+
+Si se envían correos (cliente/poder/sentencia): registrar el email enviado en “Llamadas” o equivalente (según API).
+
+Regla crítica: Invento debe quedar con notificación + justificante siempre.
+
+7) Cálculo de plazos y creación de agenda
+7.1 Cómputo de plazo
+
+Determinar fecha de “notificación” (puesta a disposición/descarga según vuestro criterio operativo).
+
+Calcular “día 1” = día siguiente.
+
+Contar solo días hábiles (L-V), excluyendo festivos configurados.
+
+Agosto:
+
+por defecto inhábil,
+
+salvo tipos de procedimiento excepcionados (config).
+
+Guardar:
+
+fecha límite “sin gracia” (lo que apuntáis),
+
+y opcional “días de gracia” como campo informativo (no para agenda principal).
+
+7.2 Crear eventos en Outlook (agenda común)
+
+Crear evento de plazo:
+
+“Todo el día”
+
+Título estándar: TERMINA PLAZO 5D ANUNCIO RSU Cliente + autos
+
+Adjuntar PDF si procede
+
+Asignar categoría/color del letrado responsable (si es posible)
+
+Crear evento de señalamiento:
+
+Fecha/hora exacta
+
+Ubicación: Juzgado + ciudad
+
+Título: Juicio Cliente vs Contrario DOI 432/2019
+
+Adjuntar citación
+
+Categoría/color del responsable
+
+7.3 Derivados automáticos para juicios
+
+Crear:
+
+15 días antes: Fin plazo 15D pedir y aportar prueba... (si aplica)
+
+1 mes antes: Reunión cliente...
+
+1,5 meses antes: Preparación juicio + expediente físico...
+
+7.4 Colisiones y suspensión
+
+Detectar si el mismo letrado tiene otro señalamiento que solapa:
+
+si sí, alertar al responsable (GP/PG/CC según oficina)
+
+crear evento interno “Fin plazo 3D pedir suspensión” desde la detección.
+
+8) Comunicaciones automáticas
+8.1 Email al letrado (diario)
+
+Agrupar por letrado todas las notificaciones nuevas del día.
+
+Generar email resumen:
+
+lista de asuntos,
+
+qué es cada notificación,
+
+plazos/señalamientos detectados,
+
+enlaces a Invento o carpeta.
+
+Adjuntar ZIP(s) correspondientes.
+
+CC a otros letrados si comparten asunto.
+
+8.2 Teams “plazos de hoy”
+
+Cada mañana (o tras job):
+
+enviar mensaje a cada letrado con “plazos del día”
+
+pedir confirmación (OK / necesito gestión).
+
+8.3 Email al cliente (cuando aplica)
+
+Si es señalamiento/suspensión:
+
+email al cliente con citación adjunta
+
+CC al letrado responsable
+
+registrar en Invento (Llamadas)
+
+Si es sentencia:
+
+email al cliente: “el abogado le llamará…”
+
+guardar en Invento (Llamadas)
+
+8.4 Poder
+
+Si el expediente no tiene poder:
+
+enviar instrucciones al cliente
+
+crear recordatorio “revisar poder en X días”
+
+registrar en Invento
+
+9) Control de calidad y auditoría (siempre encendido)
+
+La app debe registrar por cada notificación:
+
+origen (LexNET id),
+
+abogado,
+
+timestamp descarga,
+
+justificante presente (sí/no),
+
+expediente Invento asignado,
+
+documentos subidos,
+
+eventos de agenda creados,
+
+emails/teams enviados,
+
+quién validó (si hubo triage),
+
+errores/reintentos.
+
+Y un dashboard:
+
+“Hoy: descargadas / rechazados / triage pendientes / plazos creados / fallos”.
+
+Sobre “los colores de los abogados” en vuestro software
+
+Aquí hay dos “colores” distintos en tu documento, y conviene separarlos:
+
+A) Colores en la AGENDA OUTLOOK (lo más probable)
+
+En Outlook, normalmente no se colorea “un evento” con un color libre, sino con:
+
+Categorías de Outlook (cada categoría tiene un color)
+y se asigna una categoría al evento.
+
+✅ Cómo debería funcionar en la aplicación:
+
+Tener una tabla lawyer_category:
+
+Catuxa → “JL-CATUXA” (naranja)
+
+Pablo → “JL-PABLO” (rosa)
+
+etc.
+
+Al crear el evento por Graph/Outlook:
+
+asignar categories: ["JL-PABLO"]
+
+Las categorías deben existir en el buzón/calendario compartido. Si no existen, la app debe:
+
+crearlas automáticamente (si tiene permiso) o
+
+dar un checklist a IT para crearlas una vez.
+
+Si en vuestra versión hoy “se ve por color”, casi seguro estáis usando categorías.
+
+B) Colores en el EMAIL (subrayado en el cuerpo)
+
+Tu texto menciona “subrayar en color” en el email (“formato de texto → cubo de pintura”). Eso es simplemente HTML/RTF en el cuerpo del correo (resaltado).
+
+✅ Cómo debería hacerlo la app:
+
+El email resumen se genera en HTML y cada asunto se imprime con un span con fondo/estilo:
+
+Catuxa → fondo naranja
+
+Pablo → fondo rosa
+
+Esto es independiente de Outlook categorías.

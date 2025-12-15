@@ -1,0 +1,583 @@
+1) Todo lo “organizativo” debe ser 100% configurable
+
+La app no debe asumir A Coruña/Vigo ni colores fijos. Debe tener un módulo Administración → Configuración con:
+
+Oficinas (nombre, zona, calendario común asociado, canal Teams, email genérico si existe).
+
+Equipos/áreas (p.ej. “Jurídico Laboral”, “Fiscal”…), y relación con oficinas.
+
+Personas (rol: letrado/administrativa/responsable; oficina; tutor/tutelado si aplica).
+
+Categorías/colores:
+
+Para Outlook: nombre de categoría (ej. JL-PABLO) + color (el que permita Outlook).
+
+Para Emails: estilo HTML (resaltado) por persona o por rol.
+
+Reglas:
+
+quién distribuye carga por oficina,
+
+plantillas de nombres de eventos,
+
+cómputo de plazos (festivos por región, agosto, excepciones),
+
+plantillas de email (letrado/cliente/poder).
+
+Así, mañana podéis crear “Madrid”, “Barcelona” o “Mercantil” sin tocar código.
+
+2) Modo “Revisión humana” como flujo estándar (no opcional)
+
+Lo que describes es un patrón claro:
+
+“Proponer → Previsualizar → Editar → Confirmar → Ejecutar”
+
+La aplicación nunca debe ejecutar acciones sin pasar por un paso de revisión humana, salvo que un admin habilite un modo automático (si algún día queréis).
+
+Estados recomendados por cada notificación/acción
+
+Borrador (Draft): el sistema ha descargado y analizado, pero no propone nada aún o está incompleto.
+
+Propuesta (Proposed): el sistema propone expediente, carpeta, nombres, plazos, emails, eventos.
+
+En revisión (In Review): alguien la está revisando/ajustando.
+
+Aprobada (Approved): lista para ejecutar.
+
+Ejecutada (Executed): ya se subió a Invento / se creó evento / se envió email.
+
+Cancelada (Cancelled): se decide hacerlo a mano.
+
+Error (Failed): falló ejecución; permite reintentar.
+
+3) Qué significa “preguntar antes de ejecutar” (acción por acción)
+A) Antes de guardar en Invento (tu prioridad)
+
+La pantalla de revisión debe enseñar, editable:
+
+1) Dónde se va a guardar
+
+Expediente destino (con buscador y opción de cambiar)
+
+Instancia (1ª/RSU/RCUD/Ejecución)
+
+Carpeta concreta dentro de Invento
+
+2) Qué se va a subir
+
+Lista de archivos detectados (PDF principal, anexos, zip, justificante)
+
+Checkboxes para incluir/excluir
+
+Renombrado editable (numeración + título)
+
+Confirmación de que el justificante está incluido (hard requirement)
+
+3) Qué se va a escribir
+
+Nota de Invento (ej. JUICIO: ...)
+
+Llamada/registro (si aplica)
+
+✅ Botones:
+
+Aprobar y ejecutar
+
+Editar
+
+Cancelar (lo hago a mano)
+
+Guardar como borrador (para revisar después)
+
+B) Antes de tocar Outlook (agenda)
+
+Previsualización de eventos a crear:
+
+Evento de juicio (fecha/hora/ubicación/título)
+
+Evento de plazo (todo el día)
+
+Derivados (15D, 1M, 1.5M)
+
+Categoría/color asignado (editable)
+
+✅ Botones:
+
+Crear eventos
+
+Editar
+
+No crear (lo hago a mano)
+
+C) Antes de enviar emails / Teams
+
+Previsualización del correo en HTML:
+
+destinatarios (To/CC)
+
+asunto
+
+cuerpo
+
+adjuntos (zip/citación/sentencia)
+
+“registrar este correo en Invento” sí/no
+
+✅ Botones:
+
+Enviar
+
+Editar
+
+No enviar
+
+4) Implicación: el sistema debe generar “planes de ejecución”
+
+En vez de ejecutar directamente, el sistema genera un Plan compuesto por acciones:
+
+Ejemplo de Plan para una notificación:
+
+Subir archivos a Invento (con nombres X)
+
+Crear nota en Invento
+
+Crear 3 eventos en Outlook
+
+Preparar email a letrado
+
+Preparar email a cliente
+
+El humano aprueba el plan completo o por bloques.
+
+5) Qué sí puede ser automático sin pedir (y qué no)
+
+Con tu criterio (“humano revisa todo”), aun así hay cosas que son “seguras”:
+
+Automático (sin riesgo jurídico)
+
+Descargar de LexNET (con logging)
+
+Generar hashes/deduplicación
+
+Ordenar en carpeta temporal
+
+Extraer texto y proponer metadatos
+
+Siempre con confirmación humana
+
+Asignar expediente en Invento (especialmente si hay ambigüedad)
+
+Subir documentos a Invento
+
+Crear plazos/eventos
+
+Enviar emails a cliente
+
+Cualquier comunicación externa
+
+Re-presentar rechazados (yo lo dejaría con confirmación también)
+
+6) Pantallas mínimas que necesita el producto
+
+Configuración: oficinas, equipos, personas, categorías/colores, reglas.
+
+Bandeja de entrada: notificaciones descargadas (por abogado/fecha).
+
+Triage: cuando hay dudas de expediente o metadatos.
+
+Revisión (la clave): previsualizar/editar/aprobar/cancelar.
+
+Ejecuciones y auditoría: qué se hizo, por quién y cuándo.
+
+Si quieres, te lo transformo directamente en un prompt único para LLM-programador que obligue a implementar:
+
+configuración multi-oficina,
+
+workflow de aprobación,
+
+y planes de ejecución con estados (Draft→Proposed→Approved→Executed).
+
+Si, genera ese prompt, no quiero que oblige, quiero que explique muy pormenorizadamente cómo funciona todo el procedimiento y las necesidades del mismo para que el LLM no tenga ninguna duda
+
+Eres un LLM programador senior. Tu tarea es diseñar y desarrollar una plataforma llamada LexOps (nombre provisional) para automatizar el flujo operativo de un despacho: LexNET → (análisis) → revisión humana → Invento (API) → Outlook/Teams/Email, con trazabilidad completa.
+No quiero que “impongas” decisiones: quiero que entiendas el procedimiento con extremo detalle y lo implementes con interfaces claras y configurables, de modo que el sistema sea adaptable a cualquier organización (no solo A Coruña/Vigo). La prioridad es claridad funcional, configurabilidad, seguridad y revisión humana.
+
+1) Qué problema resuelve LexOps (explicación del procedimiento real)
+1.1 Dónde “llegan” las cosas
+
+Las notificaciones judiciales solo llegan a LexNET.
+
+LexNET está organizado por buzón de abogado, y el acceso a cada buzón depende del certificado digital / tarjeta / método autorizado del abogado.
+
+Ninguna notificación “llega” a Invento, Outlook o email automáticamente: todo lo demás ocurre porque una persona entra a LexNET y lo procesa.
+
+1.2 Qué hace hoy la administrativa (en orden)
+
+Para cada abogado todos los días:
+
+Entra a LexNET usando el certificado de ese abogado.
+
+Revisa si hay rechazados (envíos/presentaciones fallidas) y actúa:
+
+abre rechazado → mira motivo → reintenta o escala.
+
+Descarga las notificaciones nuevas (a menudo en ZIP).
+
+Descarga también el justificante de descarga (prueba de recepción).
+
+Descomprime ZIP, abre PDFs, y “entiende” la notificación:
+
+juzgado, nº autos, tipo (sentencia/señalamiento/requerimiento/etc.), partes, fechas, plazos.
+
+Busca o crea expediente en Invento y guarda:
+
+documentos numerados y renombrados,
+
+justificante,
+
+a veces ZIP completo,
+
+en la carpeta de la instancia correcta (1ª / RSU / RCUD / ejecución).
+
+Anota en Invento “Notas” y/o “Llamadas” (por ejemplo: fecha del juicio, correo al cliente, cliente no recurre…).
+
+Anota plazos y señalamientos en Outlook (agenda común) con:
+
+eventos “todo el día” para plazos,
+
+eventos con hora para juicios,
+
+eventos derivados (15D antes prueba, 1 mes reunión cliente, 1.5 mes preparación),
+
+detección de colisiones y creación de alertas.
+
+Envía email diario al abogado con resumen + ZIP.
+
+Si procede, envía email al cliente (citación, sentencia, suspensión) con CC al abogado y registra ese correo en Invento.
+
+Si falta poder, envía instrucciones y se crea un recordatorio para revisar si el cliente lo otorgó.
+
+2) Principios de diseño del sistema
+2.1 Todo configurable
+
+El sistema debe permitir configurar sin tocar código:
+
+Oficinas (nombres, zonas, calendarios comunes asociados, canales Teams).
+
+Equipos/áreas (p.ej. “Jurídico Laboral”, “Fiscal”).
+
+Personas (roles: letrado, administrativa, responsable, auditor) y su oficina.
+
+Asignación de responsabilidades.
+
+Plantillas de eventos, plantillas de email, plantillas de notas.
+
+Reglas de cómputo de plazos (hábiles, festivos por región, agosto inhábil con excepciones).
+
+Mapeo de “color/categoría” por persona/rol.
+
+A Coruña/Vigo/Ourense son ejemplos, pero debe poder ser “Madrid/Barcelona/Sevilla” o cualquier otra.
+
+2.2 Humano en el bucle por defecto
+
+Criterio central: ninguna acción relevante se ejecuta sin revisión humana previa, siguiendo este patrón:
+
+Proponer → Previsualizar → Editar → Confirmar → Ejecutar
+y siempre ofrecer alternativa: Cancelar (lo hago a mano).
+
+Esto aplica a:
+
+guardar/subir a Invento,
+
+crear eventos en Outlook,
+
+enviar emails (especialmente al cliente),
+
+reintentar rechazados (recomendado: confirmar antes).
+
+Lo único que puede ser “automático sin confirmación” (por defecto) es:
+
+descargar de LexNET,
+
+organizar en carpetas temporales,
+
+extraer metadatos y generar propuestas (sin ejecutar).
+
+2.3 Trazabilidad y seguridad
+
+Siempre guardar el justificante de LexNET junto a la notificación.
+
+Auditoría completa: quién aprobó qué, cuándo, qué se ejecutó, y resultado.
+
+No almacenar secretos en texto plano. Si hay certificados/tarjetas, deben permanecer en el agente local.
+
+Minimización de PII en logs.
+
+3) Arquitectura requerida (sin imponer, pero con enfoque recomendado)
+3.1 Componentes
+
+Web Control Center
+
+Para configurar la organización, ver bandeja de notificaciones, triage, revisión, aprobación, dashboard, auditoría.
+
+Agente de escritorio Windows
+
+Para operar LexNET con certificado/tarjeta (RPA/automatización).
+
+Descarga ZIP + justificante.
+
+Envía “paquetes” al backend.
+
+Backend
+
+Orquesta flujos, guarda datos, genera propuestas de acciones y prepara “planes” para revisión.
+
+Integra con:
+
+Invento API (Swagger/OpenAPI),
+
+Microsoft Graph (Outlook/Teams/Email),
+
+almacenamiento (OneDrive/SharePoint o storage propio).
+
+3.2 IA agentica (si procede)
+
+La IA debe usarse para:
+
+extraer datos del PDF (fechas, nº autos, tipo, plazos),
+
+proponer clasificación a expediente,
+
+proponer títulos y descripciones,
+
+redactar borradores de emails.
+
+Guardrails:
+
+La IA no ejecuta acciones directamente: solo produce propuestas.
+
+Debe devolver “evidencias” y “confianza”.
+
+4) Flujo detallado que debe implementar la app (paso a paso)
+4.1 Descarga y paquetización (Agente)
+
+Para cada abogado configurado:
+
+Login LexNET con su certificado.
+
+Revisar “rechazados”:
+
+listar → extraer motivo → crear “tarea” de revisión/reintento.
+
+Descargar notificaciones nuevas:
+
+obtener ZIP(s) + justificante(s).
+
+Guardar localmente en ruta:
+/YYYY-MM-DD/abogado/lexnet_batch_N/
+
+Calcular hash de archivos y crear objeto “Package”.
+
+Subir el Package al backend y registrar:
+
+abogado, timestamps, ids LexNET (si existen), hashes, lista de archivos.
+
+Estados posibles del Package:
+
+INCOMPLETO (si falta justificante),
+
+LISTO_PARA_ANALISIS,
+
+ERROR_DESCARGA.
+
+4.2 Análisis del paquete (Backend)
+
+Descomprimir ZIP.
+
+Detectar PDF principal y anexos.
+
+Extraer texto.
+
+Extraer metadatos con reglas+IA:
+
+juzgado, autos, tipo, partes,
+
+si hay señalamiento (fecha/hora/lugar),
+
+si hay plazos (N días, tipo, inicio),
+
+enlaces externos (grabación, expediente administrativo).
+
+Crear objeto “NotificationFacts” con:
+
+campos, evidencias, confianza.
+
+4.3 Propuesta de clasificación a expediente (Backend)
+
+Buscar expediente en Invento por:
+
+nº autos + juzgado,
+
+o RSU/RCUD/ETJ,
+
+o cliente/contrario.
+
+Generar propuesta:
+
+expedienteId sugerido,
+
+instancia sugerida,
+
+carpeta sugerida,
+
+numeración sugerida,
+
+nombres de archivo sugeridos.
+
+Si baja confianza o múltiples candidatos:
+
+crear ítem en TRIAGE asignado a la administrativa correspondiente (configurable por oficina).
+
+4.4 Pantalla de Revisión (Humano)
+
+La UI debe mostrar, editable:
+
+A) Invento
+
+expediente destino (buscar/cambiar/crear),
+
+instancia/carpeta,
+
+lista de archivos a subir (incluir/excluir),
+
+renombrado (numeración + título),
+
+verificación de justificante,
+
+previsualización PDF,
+
+notas/llamadas a crear.
+
+B) Agenda Outlook
+
+eventos propuestos (plazos, juicio, derivados),
+
+fechas/hora/títulos/ubicación,
+
+categoría/color (editable),
+
+adjuntos.
+
+C) Comunicaciones
+
+emails propuestos a letrado (resumen + zip),
+
+emails propuestos a cliente (citación/sentencia/poder),
+
+destinatarios To/CC,
+
+cuerpo HTML editable,
+
+registro en Invento (sí/no).
+
+El revisor debe poder:
+
+Aprobar todo el plan,
+
+Aprobar por bloques,
+
+Editar y luego aprobar,
+
+Cancelar para hacerlo manual.
+
+4.5 Ejecución (solo tras aprobación)
+
+Cuando el humano aprueba, ejecutar acciones:
+
+Invento:
+
+subir documentos,
+
+crear notas/llamadas,
+
+guardar justificante.
+
+Outlook:
+
+crear eventos en calendario común correspondiente,
+
+aplicar categoría/color si existe.
+
+Email/Teams:
+
+enviar emails (letrado/cliente),
+
+enviar Teams “plazos de hoy” si aplica,
+
+guardar copias en Invento si corresponde.
+
+Marcar estados:
+
+APPROVED → EXECUTED o FAILED.
+
+Si FAILED, mostrar detalle y permitir reintento.
+
+5) “Colores” y “categorías” (debe ser configurable)
+
+El sistema debe soportar dos cosas distintas:
+
+Categorías Outlook para colorear eventos en calendarios:
+
+Cada abogado/rol puede mapearse a una categoría (ej. AREA-LAWYER-NAME).
+
+La app debe permitir:
+
+definir categorías y asociarlas a personas,
+
+o detectar categorías existentes,
+
+y aplicar la categoría al evento al crearlo.
+
+Resaltado de color en emails (HTML):
+
+Para el resumen, cada asunto puede llevar un span con fondo/estilo según persona/rol.
+
+También configurable.
+
+No asumir que Outlook permitirá colores arbitrarios: usar categorías como mecanismo.
+
+6) Entregables que debes generar
+
+Código completo en un repo (monorepo: web + api + agent).
+
+Docker compose para backend + db + cola.
+
+Documentación del flujo operativo.
+
+Esquema de base de datos.
+
+Mocks para Invento API y Microsoft Graph si faltan credenciales.
+
+UI con pantallas: Configuración, Bandeja, TRIAGE, Revisión, Dashboard, Auditoría.
+
+Tests para:
+
+extracción de fechas/plazos,
+
+deduplicación por hash,
+
+generación de planes,
+
+ejecución idempotente.
+
+7) Restricciones
+
+No vulnerar controles de LexNET ni “saltarse” mecanismos de seguridad.
+
+Mantener credenciales/certificados en el agente local.
+
+Evitar automatizar decisiones jurídicas: el sistema propone, el humano aprueba.
+
+Siempre trazabilidad y justificante.
+
+Ahora, con esta especificación, diseña e implementa LexOps: define modelos, flujos, UI, y una arquitectura robusta. En cada módulo explica cómo se configura para adaptarse a nuevas oficinas, personas y reglas sin cambiar código.
