@@ -21,15 +21,23 @@ Vento LexOps es una plataforma de automatización legal para la gestión de noti
 │   ├── db.ts             # Conexión a PostgreSQL
 │   ├── auth.ts           # Autenticación y roles
 │   ├── ai-service.ts     # Servicio dual AI (Gemini/OpenAI)
+│   ├── config-api.ts     # APIs CRUD de configuración (ADMIN only)
+│   ├── packages-api.ts   # APIs de paquetes LexNET
+│   ├── package-processor.ts  # Procesamiento de ZIPs y extracción
+│   ├── execution-plan-service.ts # Sistema de planes de ejecución
+│   ├── storage-service.ts    # Almacenamiento de documentos
 │   ├── microsoft-graph.ts # Integración Microsoft 365
 │   └── invento-api.ts    # Integración Invento
 ├── shared/
-│   └── schema.ts         # Schema Drizzle (usuarios, notificaciones, etc.)
+│   └── schema.ts         # Schema Drizzle (10+ tablas incluyendo offices, teams, packages, etc.)
 ├── components/
 │   └── Layout.tsx        # Layout principal con navegación
 ├── screens/
 │   ├── Dashboard.tsx     # Panel de control
 │   ├── Triage.tsx        # Bandeja de triage
+│   ├── Packages.tsx      # Gestión de paquetes LexNET
+│   ├── Review.tsx        # Revisión de planes de ejecución
+│   ├── Configuration.tsx # Configuración multi-oficina (ADMIN)
 │   ├── Login.tsx         # Pantalla de login/registro
 │   ├── Settings.tsx      # Configuración de usuario y AI
 │   ├── Audit.tsx         # Logs de auditoría
