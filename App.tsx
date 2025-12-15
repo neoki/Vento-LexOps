@@ -6,6 +6,9 @@ import Audit from './screens/Audit';
 import LexNetSetup from './screens/LexNetSetup';
 import CalendarView from './screens/CalendarView';
 import NotificationsList from './screens/NotificationsList';
+import Packages from './screens/Packages';
+import Review from './screens/Review';
+import Configuration from './screens/Configuration';
 import Login from './screens/Login';
 import Settings from './screens/Settings';
 
@@ -94,12 +97,18 @@ const App: React.FC = () => {
         return <Triage />;
       case 'notifications':
         return <NotificationsList />;
+      case 'packages':
+        return <Packages />;
+      case 'review':
+        return <Review />;
       case 'calendar':
         return <CalendarView />;
       case 'audit':
         return <Audit />;
       case 'lexnet':
         return <LexNetSetup />;
+      case 'configuration':
+        return <Configuration />;
       case 'settings':
         return <Settings user={user} />;
       default:

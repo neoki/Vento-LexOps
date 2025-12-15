@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 
 export type AIProvider = "OPENAI" | "GEMINI";
 
-interface AIAnalysisResult {
+export interface AIAnalysisResult {
   confidence: number;
   reasoning: string[];
   suggestedCaseId?: string;
@@ -14,9 +14,28 @@ interface AIAnalysisResult {
     type: string;
     date: string;
     description: string;
+    days?: number;
   }>;
   priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   docType: string;
+  court?: string;
+  procedureNumber?: string;
+  procedureType?: string;
+  actType?: string;
+  parties?: {
+    client?: string;
+    opponent?: string;
+  };
+  dates?: {
+    hearing?: Date;
+    deadline?: Date;
+  };
+  deadlines?: Array<{
+    days: number;
+    type: string;
+    description: string;
+  }>;
+  evidences?: string[];
 }
 
 interface AIProviderConfig {
@@ -48,6 +67,48 @@ async function getUserAIConfig(userId: number): Promise<AIProviderConfig> {
   };
 }
 
+const ANALYSIS_PROMPT = `Analiza el siguiente documento legal de LexNET y extrae la información relevante.
+
+Documento:
+{DOCUMENT_TEXT}
+
+Responde en formato JSON con la siguiente estructura:
+{
+  "confidence": <número del 0 al 100 indicando la confianza del análisis>,
+  "reasoning": [<array de strings explicando el razonamiento>],
+  "court": "<nombre del juzgado>",
+  "procedureNumber": "<número de autos/procedimiento>",
+  "procedureType": "<tipo: PO, DSP, DOI, RSU, RCUD, ETJ, etc>",
+  "actType": "<tipo de acto: SEÑALAMIENTO, SENTENCIA, PROVIDENCIA, AUTO, CITACION, REQUERIMIENTO, etc>",
+  "parties": {
+    "client": "<nombre del cliente si se identifica>",
+    "opponent": "<nombre de la parte contraria si se identifica>"
+  },
+  "dates": {
+    "hearing": "<fecha y hora de juicio/vista si existe, en ISO>",
+    "deadline": "<fecha límite de plazo si existe, en ISO>"
+  },
+  "deadlines": [
+    {
+      "days": <número de días del plazo>,
+      "type": "<HABIL o NATURAL>",
+      "description": "<descripción del plazo>"
+    }
+  ],
+  "evidences": [<fragmentos del texto que respaldan el análisis>],
+  "suggestedCaseId": "<ID del caso sugerido si se puede inferir>",
+  "extractedDeadlines": [
+    {
+      "type": "<tipo de plazo: RECURSO, CONTESTACION, AUDIENCIA, etc>",
+      "date": "<fecha calculada en formato ISO>",
+      "description": "<descripción del plazo>",
+      "days": <días del plazo>
+    }
+  ],
+  "priority": "<LOW|MEDIUM|HIGH|CRITICAL basado en urgencia>",
+  "docType": "<tipo de documento: SENTENCIA, PROVIDENCIA, AUTO, CITACION, etc>"
+}`;
+
 async function analyzeWithGemini(
   apiKey: string,
   documentText: string,
@@ -55,26 +116,7 @@ async function analyzeWithGemini(
 ): Promise<AIAnalysisResult> {
   const genAI = new GoogleGenAI({ apiKey });
 
-  const prompt = `Analiza el siguiente documento legal de LexNET y extrae la información relevante.
-
-Documento:
-${documentText}
-
-Responde en formato JSON con la siguiente estructura:
-{
-  "confidence": <número del 0 al 100 indicando la confianza del análisis>,
-  "reasoning": [<array de strings explicando el razonamiento>],
-  "suggestedCaseId": "<ID del caso sugerido si se puede inferir>",
-  "extractedDeadlines": [
-    {
-      "type": "<tipo de plazo: RECURSO, CONTESTACION, AUDIENCIA, etc>",
-      "date": "<fecha en formato ISO>",
-      "description": "<descripción del plazo>"
-    }
-  ],
-  "priority": "<LOW|MEDIUM|HIGH|CRITICAL basado en urgencia>",
-  "docType": "<tipo de documento: SENTENCIA, PROVIDENCIA, AUTO, CITACION, etc>"
-}`;
+  const prompt = ANALYSIS_PROMPT.replace('{DOCUMENT_TEXT}', documentText);
 
   const response = await genAI.models.generateContent({
     model: "gemini-2.0-flash",
@@ -100,26 +142,7 @@ async function analyzeWithOpenAI(
     baseURL: useReplit ? process.env.AI_INTEGRATIONS_OPENAI_BASE_URL : undefined,
   });
 
-  const prompt = `Analiza el siguiente documento legal de LexNET y extrae la información relevante.
-
-Documento:
-${documentText}
-
-Responde en formato JSON con la siguiente estructura:
-{
-  "confidence": <número del 0 al 100 indicando la confianza del análisis>,
-  "reasoning": [<array de strings explicando el razonamiento>],
-  "suggestedCaseId": "<ID del caso sugerido si se puede inferir>",
-  "extractedDeadlines": [
-    {
-      "type": "<tipo de plazo: RECURSO, CONTESTACION, AUDIENCIA, etc>",
-      "date": "<fecha en formato ISO>",
-      "description": "<descripción del plazo>"
-    }
-  ],
-  "priority": "<LOW|MEDIUM|HIGH|CRITICAL basado en urgencia>",
-  "docType": "<tipo de documento: SENTENCIA, PROVIDENCIA, AUTO, CITACION, etc>"
-}`;
+  const prompt = ANALYSIS_PROMPT.replace('{DOCUMENT_TEXT}', documentText);
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
@@ -133,8 +156,8 @@ Responde en formato JSON con la siguiente estructura:
 }
 
 export async function analyzeDocument(
-  userId: number,
-  documentText: string
+  documentText: string,
+  userId: number
 ): Promise<AIAnalysisResult> {
   const config = await getUserAIConfig(userId);
 

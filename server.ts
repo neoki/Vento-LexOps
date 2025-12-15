@@ -8,7 +8,9 @@ import { setupAuth, requireAuth, requireRole } from './server/auth';
 import { analyzeDocument, updateUserAISettings, getAISettings } from './server/ai-service';
 import * as msGraph from './server/microsoft-graph';
 import * as inventoApi from './server/invento-api';
-import { notifications, agents, agentLogs, users, userAiSettings, auditLogs } from './shared/schema';
+import configApi from './server/config-api';
+import packagesApi from './server/packages-api';
+import { notifications, agents, agentLogs, users, userAiSettings, auditLogs, lexnetPackages } from './shared/schema';
 import { eq, desc, sql, and } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +28,9 @@ app.use(cors({
 app.use(express.json());
 
 setupAuth(app);
+
+app.use('/api/config', requireAuth, requireRole('ADMIN'), configApi);
+app.use('/api', requireAuth, packagesApi);
 
 if (isProduction) {
   app.use(express.static(path.join(__dirname, 'dist')));
@@ -50,6 +55,7 @@ app.get('/api/dashboard', async (req, res) => {
   try {
     const allNotifications = await db.select().from(notifications);
     const allAgents = await db.select().from(agents);
+    const allPackages = await db.select().from(lexnetPackages);
     
     const onlineAgents = allAgents.filter(a => 
       a.status === 'ONLINE' && 
@@ -63,12 +69,20 @@ app.get('/api/dashboard', async (req, res) => {
       .orderBy(desc(agentLogs.createdAt))
       .limit(10);
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayPackages = allPackages.filter(p => new Date(p.downloadDate) >= today);
+
     res.json({
       stats: {
         incoming: allNotifications.length,
         triage: allNotifications.filter(n => n.status === 'TRIAGE_REQUIRED').length,
         synced: allNotifications.filter(n => n.status === 'SYNCED').length,
-        reviewed: allNotifications.filter(n => n.status === 'REVIEWED').length
+        reviewed: allNotifications.filter(n => n.status === 'REVIEWED').length,
+        packagesTotal: allPackages.length,
+        packagesToday: todayPackages.length,
+        packagesIncomplete: allPackages.filter(p => p.status === 'INCOMPLETE').length,
+        packagesAnalyzed: allPackages.filter(p => p.status === 'ANALYZED').length
       },
       agentStatus: onlineAgents.length > 0 ? 'ONLINE' : 'OFFLINE',
       agentCount: allAgents.length,
@@ -159,7 +173,7 @@ app.post('/api/notifications/:id/analyze', requireAuth, async (req, res) => {
     }
 
     const documentText = JSON.stringify(notification.rawPayload || notification);
-    const analysis = await analyzeDocument(req.user.id, documentText);
+    const analysis = await analyzeDocument(documentText, req.user.id);
 
     const [updated] = await db
       .update(notifications)

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Inbox, FileText, Calendar, ShieldCheck, Settings, Bell, Search, User, Briefcase, LogOut, Monitor } from 'lucide-react';
+import { LayoutDashboard, Inbox, FileText, Calendar, ShieldCheck, Settings, Bell, Search, User, Briefcase, LogOut, Monitor, Package, CheckSquare, Sliders } from 'lucide-react';
 import { APP_NAME } from '../constants';
 
 interface UserInfo {
@@ -21,13 +21,16 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, activeScreen, onNavigate, user, onLogout }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+    { id: 'packages', label: 'Paquetes LexNET', icon: <Package size={20} /> },
     { id: 'triage', label: 'Bandeja Triage', icon: <Inbox size={20} />, badge: 3 },
+    { id: 'review', label: 'Revisión', icon: <CheckSquare size={20} /> },
     { id: 'notifications', label: 'Notificaciones', icon: <Bell size={20} /> },
     { id: 'cases', label: 'Expedientes', icon: <Briefcase size={20} /> },
     { id: 'calendar', label: 'Agenda & Plazos', icon: <Calendar size={20} /> },
     { id: 'audit', label: 'Auditoría', icon: <ShieldCheck size={20} />, adminOnly: true },
-    { id: 'lexnet', label: 'Configuración LexNET', icon: <Monitor size={20} /> },
-    { id: 'settings', label: 'Configuración', icon: <Settings size={20} /> },
+    { id: 'lexnet', label: 'Config. LexNET', icon: <Monitor size={20} /> },
+    { id: 'configuration', label: 'Sistema', icon: <Sliders size={20} />, adminOnly: true },
+    { id: 'settings', label: 'Mi cuenta', icon: <Settings size={20} /> },
   ];
 
   const filteredNavItems = navItems.filter(item => {
