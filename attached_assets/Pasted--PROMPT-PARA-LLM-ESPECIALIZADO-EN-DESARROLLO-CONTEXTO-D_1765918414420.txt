@@ -1,0 +1,665 @@
+# PROMPT PARA LLM ESPECIALIZADO EN DESARROLLO
+
+## CONTEXTO DEL PROYECTO
+
+Tienes un componente React que visualiza un mapa estratégico 3D interactivo para CIO de despacho de abogados. El componente usa Three.js para renderizar 30 nodos (iniciativas tecnológicas) en espacio 3D, conectados mediante líneas que representan dependencias.
+
+**Stack técnico actual:**
+- React 18+ con hooks
+- Three.js r128
+- Tailwind CSS
+- Lucide React (iconos)
+
+**Estructura de datos de nodos:**
+```javascript
+{
+  id: string,              // Identificador único
+  label: string,           // Nombre (puede tener \n)
+  area: string,            // 'strategy' | 'security' | 'operations' | 'talent'
+  position: [x, y, z],     // Coordenadas 3D
+  size: number,            // Radio de la esfera (0.8-2.0)
+  content: string,         // Descripción detallada (editable)
+  connections: string[]    // Array de IDs de nodos relacionados
+}
+```
+
+**Objetivo:** Implementar 8 mejoras prioritarias manteniendo la arquitectura actual y mejorando UX para presentaciones ejecutivas.
+
+---
+
+## MEJORAS A IMPLEMENTAR
+
+### 1. PERSISTENCIA CON STORAGE API
+
+**Requisito:** Guardar automáticamente todos los cambios del usuario (contenido editado, estados de nodos, filtros activos).
+
+**Implementación:**
+
+```javascript
+// Si tienes window.storage disponible (Claude.ai artifacts):
+const saveToStorage = async (key, data) => {
+  try {
+    await window.storage.set(key, JSON.stringify(data));
+  } catch (error) {
+    console.error('Storage error:', error);
+  }
+};
+
+const loadFromStorage = async (key) => {
+  try {
+    const result = await window.storage.get(key);
+    return result ? JSON.parse(result.value) : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+// Si NO tienes window.storage, usa localStorage:
+const saveToStorage = (key, data) => {
+  localStorage.setItem(key, JSON.stringify(data));
+};
+
+const loadFromStorage = (key) => {
+  const data = localStorage.getItem(key);
+  return data ? JSON.parse(data) : null;
+};
+```
+
+**Datos a persistir:**
+- `strategic-map-nodes`: Array completo de nodos con contenido editado
+- `strategic-map-node-states`: Estados de cada nodo (ver mejora #2)
+- `strategic-map-filters`: Filtros activos
+- `strategic-map-camera`: Posición de cámara guardada (opcional)
+
+**Cargar al inicio del componente:**
+```javascript
+useEffect(() => {
+  const loadData = async () => {
+    const savedNodes = await loadFromStorage('strategic-map-nodes');
+    if (savedNodes) {
+      // Merge con nodesData default, preservando ediciones
+      setNodesData(mergeNodeData(nodesData, savedNodes));
+    }
+  };
+  loadData();
+}, []);
+```
+
+**Guardar automáticamente al editar:**
+```javascript
+const handleSave = async () => {
+  // ... código actual ...
+  await saveToStorage('strategic-map-nodes', updatedNodesData);
+};
+```
+
+---
+
+### 2. ESTADO DE PROYECTOS CON CÓDIGO DE COLORES
+
+**Requisito:** Cada nodo debe tener un estado visual (verde/amarillo/rojo) que se muestre como anillo exterior o glow.
+
+**Nuevo campo en nodos:**
+```javascript
+{
+  // ... campos existentes ...
+  status: 'green' | 'yellow' | 'red' | 'gray', // gray = no iniciado
+  progress: number // 0-100 (opcional para mejora #7)
+}
+```
+
+**Implementación visual - Opción 1: Anillo exterior**
+```javascript
+// Después de crear la esfera principal, añadir un anillo:
+const ringGeometry = new THREE.TorusGeometry(node.size * 1.15, 0.08, 16, 32);
+const statusColors = {
+  green: 0x22c55e,
+  yellow: 0xeab308,
+  red: 0xef4444,
+  gray: 0x6b7280
+};
+const ringMaterial = new THREE.MeshBasicMaterial({
+  color: statusColors[node.status || 'gray'],
+  transparent: true,
+  opacity: 0.8
+});
+const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+ring.position.copy(sphere.position);
+ring.rotation.x = Math.PI / 2;
+scene.add(ring);
+```
+
+**Implementación visual - Opción 2: Glow/Emissive**
+```javascript
+// Modificar material de la esfera:
+const material = new THREE.MeshStandardMaterial({
+  color: areaColors[node.area],
+  metalness: 0.3,
+  roughness: 0.4,
+  emissive: statusColors[node.status || 'gray'],
+  emissiveIntensity: 0.5 // Más intenso para estado
+});
+```
+
+**UI para cambiar estado:**
+Añadir en el panel de detalles:
+```jsx
+<div className="mt-4">
+  <label className="block text-sm font-bold text-gray-700 mb-2">
+    ESTADO DEL PROYECTO
+  </label>
+  <div className="flex gap-2">
+    {['green', 'yellow', 'red', 'gray'].map(status => (
+      <button
+        key={status}
+        onClick={() => setNodeStatus(selectedNode.id, status)}
+        className={`px-4 py-2 rounded ${
+          selectedNode.status === status ? 'ring-2 ring-blue-500' : ''
+        }`}
+        style={{ backgroundColor: statusColorsHex[status] }}
+      >
+        {statusLabels[status]}
+      </button>
+    ))}
+  </div>
+</div>
+```
+
+---
+
+### 3. FILTROS INTERACTIVOS POR ÁREA
+
+**Requisito:** Botones para mostrar/ocultar áreas completas o filtrar por estado.
+
+**Estado del componente:**
+```javascript
+const [filters, setFilters] = useState({
+  strategy: true,
+  security: true,
+  operations: true,
+  talent: true,
+  showGreen: true,
+  showYellow: true,
+  showRed: true,
+  showGray: true
+});
+```
+
+**UI de filtros:**
+```jsx
+<div className="absolute top-4 left-4 bg-white/10 backdrop-blur p-3 rounded text-white">
+  <div className="text-xs font-bold mb-2">FILTRAR POR ÁREA</div>
+  {Object.entries(areaNames).map(([key, name]) => (
+    <label key={key} className="flex items-center gap-2 mb-1 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={filters[key]}
+        onChange={() => setFilters(prev => ({ ...prev, [key]: !prev[key] }))}
+        className="w-4 h-4"
+      />
+      <span className="text-xs">{name}</span>
+    </label>
+  ))}
+  
+  <div className="text-xs font-bold mt-3 mb-2">FILTRAR POR ESTADO</div>
+  {['green', 'yellow', 'red', 'gray'].map(status => (
+    <label key={status} className="flex items-center gap-2 mb-1 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={filters[`show${status.charAt(0).toUpperCase() + status.slice(1)}`]}
+        onChange={() => toggleStatusFilter(status)}
+        className="w-4 h-4"
+      />
+      <span className="text-xs">{statusLabels[status]}</span>
+    </label>
+  ))}
+</div>
+```
+
+**Aplicar filtros a la escena:**
+```javascript
+useEffect(() => {
+  spheresRef.current.forEach(sphere => {
+    const node = sphere.userData;
+    const areaVisible = filters[node.area];
+    const statusVisible = filters[`show${node.status?.charAt(0).toUpperCase() + node.status?.slice(1)}`];
+    
+    sphere.visible = areaVisible && statusVisible;
+    // También ocultar etiquetas y líneas asociadas
+  });
+}, [filters]);
+```
+
+---
+
+### 4. BÚSQUEDA RÁPIDA DE NODOS
+
+**Requisito:** Campo de búsqueda que filtre nodos y navegue automáticamente al seleccionado.
+
+**Estado:**
+```javascript
+const [searchQuery, setSearchQuery] = useState('');
+const [searchResults, setSearchResults] = useState([]);
+```
+
+**UI:**
+```jsx
+<div className="absolute top-20 right-4 w-64">
+  <input
+    type="text"
+    value={searchQuery}
+    onChange={handleSearch}
+    placeholder="Buscar iniciativa..."
+    className="w-full px-3 py-2 bg-white/10 backdrop-blur text-white rounded border border-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500"
+  />
+  {searchResults.length > 0 && (
+    <div className="mt-2 bg-white/95 backdrop-blur rounded shadow-lg max-h-60 overflow-y-auto">
+      {searchResults.map(node => (
+        <button
+          key={node.id}
+          onClick={() => flyToNode(node)}
+          className="w-full text-left px-3 py-2 hover:bg-blue-50 text-gray-900 text-sm border-b"
+        >
+          {node.label.replace('\n', ' ')}
+        </button>
+      ))}
+    </div>
+  )}
+</div>
+```
+
+**Lógica de búsqueda:**
+```javascript
+const handleSearch = (e) => {
+  const query = e.target.value;
+  setSearchQuery(query);
+  
+  if (query.length < 2) {
+    setSearchResults([]);
+    return;
+  }
+  
+  const results = nodesData.filter(node =>
+    node.label.toLowerCase().includes(query.toLowerCase()) ||
+    node.content.toLowerCase().includes(query.toLowerCase())
+  );
+  setSearchResults(results.slice(0, 10));
+};
+```
+
+**Navegar a nodo:**
+```javascript
+const flyToNode = (node) => {
+  const camera = cameraRef.current;
+  const targetPos = new THREE.Vector3(...node.position);
+  
+  // Animación suave usando GSAP o manual:
+  const startPos = camera.position.clone();
+  const duration = 1000; // ms
+  const startTime = Date.now();
+  
+  const animate = () => {
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    
+    camera.position.lerpVectors(startPos, targetPos.add(new THREE.Vector3(0, 0, 10)), progress);
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Seleccionar el nodo
+      const sphere = spheresRef.current.find(s => s.userData.id === node.id);
+      if (sphere) {
+        setSelectedNode(sphere.userData);
+        setEditedContent(sphere.userData.content);
+      }
+    }
+  };
+  animate();
+  
+  setSearchQuery('');
+  setSearchResults([]);
+};
+```
+
+---
+
+### 5. VISTA DE DEPENDENCIAS CRÍTICAS
+
+**Requisito:** Al seleccionar un nodo, resaltar visualmente todo su grafo de dependencias (upstream y downstream).
+
+**Implementación:**
+```javascript
+const highlightDependencies = (nodeId) => {
+  const visited = new Set();
+  const toHighlight = new Set();
+  
+  // Función recursiva para encontrar todas las dependencias
+  const traverse = (id, direction) => {
+    if (visited.has(id)) return;
+    visited.add(id);
+    toHighlight.add(id);
+    
+    const node = nodesData.find(n => n.id === id);
+    if (!node) return;
+    
+    if (direction === 'downstream') {
+      // Nodos que dependen de este
+      node.connections.forEach(connId => traverse(connId, 'downstream'));
+    } else {
+      // Nodos de los que este depende
+      nodesData.forEach(n => {
+        if (n.connections.includes(id)) {
+          traverse(n.id, 'upstream');
+        }
+      });
+    }
+  };
+  
+  // Buscar en ambas direcciones
+  traverse(nodeId, 'downstream');
+  traverse(nodeId, 'upstream');
+  
+  // Aplicar highlight visual
+  spheresRef.current.forEach(sphere => {
+    if (toHighlight.has(sphere.userData.id)) {
+      sphere.material.emissiveIntensity = 0.6;
+      sphere.scale.set(1.3, 1.3, 1.3);
+    } else {
+      sphere.material.opacity = 0.3;
+    }
+  });
+  
+  // También resaltar líneas de conexión
+  // (requiere guardar referencias a las líneas al crearlas)
+};
+
+const clearHighlight = () => {
+  spheresRef.current.forEach(sphere => {
+    sphere.material.emissiveIntensity = 0.1;
+    sphere.material.opacity = 1;
+    sphere.scale.set(1, 1, 1);
+  });
+};
+```
+
+**Añadir botón en panel de detalles:**
+```jsx
+<button
+  onClick={() => highlightDependencies(selectedNode.id)}
+  className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+>
+  Ver Dependencias
+</button>
+```
+
+---
+
+### 6. EXPORTAR SNAPSHOT (PNG/PDF)
+
+**Requisito:** Capturar la vista actual como imagen de alta resolución.
+
+**Implementación - PNG:**
+```javascript
+const exportToPNG = () => {
+  const renderer = rendererRef.current;
+  const camera = cameraRef.current;
+  const scene = sceneRef.current;
+  
+  // Render a mayor resolución
+  const originalSize = renderer.getSize(new THREE.Vector2());
+  const exportWidth = 3840; // 4K
+  const exportHeight = 2160;
+  
+  renderer.setSize(exportWidth, exportHeight);
+  camera.aspect = exportWidth / exportHeight;
+  camera.updateProjectionMatrix();
+  
+  renderer.render(scene, camera);
+  
+  // Capturar como imagen
+  renderer.domElement.toBlob((blob) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `mapa-estrategico-${Date.now()}.png`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    // Restaurar tamaño original
+    renderer.setSize(originalSize.x, originalSize.y);
+    camera.aspect = originalSize.x / originalSize.y;
+    camera.updateProjectionMatrix();
+  });
+};
+```
+
+**Implementación - PDF con metadatos:**
+```javascript
+// Usar jsPDF (agregar: npm install jspdf)
+import jsPDF from 'jspdf';
+
+const exportToPDF = () => {
+  const pdf = new jsPDF('landscape', 'mm', 'a4');
+  
+  // Capturar imagen
+  const canvas = rendererRef.current.domElement;
+  const imgData = canvas.toDataURL('image/png');
+  
+  // Añadir imagen al PDF
+  pdf.addImage(imgData, 'PNG', 10, 10, 277, 180);
+  
+  // Añadir metadatos
+  pdf.setFontSize(16);
+  pdf.text('Mapa Estratégico CIO - Vento Abogados', 148, 200, { align: 'center' });
+  
+  // Nueva página con tabla de iniciativas
+  pdf.addPage();
+  pdf.setFontSize(14);
+  pdf.text('Resumen de Iniciativas', 148, 15, { align: 'center' });
+  
+  let yPos = 30;
+  nodesData.forEach((node, i) => {
+    if (yPos > 270) {
+      pdf.addPage();
+      yPos = 20;
+    }
+    pdf.setFontSize(10);
+    pdf.text(`${i + 1}. ${node.label.replace('\n', ' ')}`, 10, yPos);
+    pdf.setFontSize(8);
+    pdf.text(`   Estado: ${node.status || 'N/A'} | Área: ${areaNames[node.area]}`, 10, yPos + 5);
+    yPos += 12;
+  });
+  
+  pdf.save(`mapa-estrategico-${Date.now()}.pdf`);
+};
+```
+
+**Botón en UI:**
+```jsx
+<button
+  onClick={exportToPNG}
+  className="bg-white/10 hover:bg-white/20 text-white p-2 rounded backdrop-blur"
+  title="Exportar PNG"
+>
+  <Download size={20} />
+</button>
+```
+
+---
+
+### 7. INDICADORES DE PROGRESO
+
+**Requisito:** Cada nodo muestra su % de progreso visualmente.
+
+**Nuevo campo:**
+```javascript
+{
+  // ... campos existentes ...
+  progress: number // 0-100
+}
+```
+
+**Implementación visual - Barra de progreso circular:**
+```javascript
+// Crear un arco que rodee parcialmente la esfera según progreso
+const createProgressRing = (node) => {
+  const progress = node.progress || 0;
+  const curve = new THREE.EllipseCurve(
+    0, 0,              // centro
+    node.size * 1.2, node.size * 1.2, // radios
+    0, (progress / 100) * Math.PI * 2, // ángulos (0 a 360° según progreso)
+    false,
+    0
+  );
+  
+  const points = curve.getPoints(50);
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({ 
+    color: 0x00ff00, 
+    linewidth: 3 
+  });
+  const ring = new THREE.Line(geometry, material);
+  ring.position.copy(node.position);
+  ring.rotation.x = Math.PI / 2;
+  scene.add(ring);
+};
+```
+
+**UI para editar progreso:**
+```jsx
+<div className="mt-4">
+  <label className="block text-sm font-bold text-gray-700 mb-2">
+    PROGRESO: {selectedNode.progress || 0}%
+  </label>
+  <input
+    type="range"
+    min="0"
+    max="100"
+    value={selectedNode.progress || 0}
+    onChange={(e) => updateNodeProgress(selectedNode.id, parseInt(e.target.value))}
+    className="w-full"
+  />
+</div>
+```
+
+---
+
+### 8. TIMELINE/ROADMAP TEMPORAL
+
+**Requisito:** Organizar nodos también por dimensión temporal (trimestre).
+
+**Nuevos campos:**
+```javascript
+{
+  // ... campos existentes ...
+  quarter: 'Q1' | 'Q2' | 'Q3' | 'Q4' | null,
+  year: 2025
+}
+```
+
+**Vista timeline (modo alternativo):**
+```javascript
+const [viewMode, setViewMode] = useState('spatial'); // 'spatial' | 'timeline'
+
+// En modo timeline, reorganizar posiciones automáticamente:
+const timelineLayout = () => {
+  const quarters = { Q1: [], Q2: [], Q3: [], Q4: [] };
+  
+  nodesData.forEach(node => {
+    if (node.quarter) {
+      quarters[node.quarter].push(node);
+    }
+  });
+  
+  // Distribuir en eje X por trimestre, Y por área
+  Object.entries(quarters).forEach(([quarter, nodes], qIndex) => {
+    nodes.forEach((node, nIndex) => {
+      const sphere = spheresRef.current.find(s => s.userData.id === node.id);
+      if (sphere) {
+        const targetX = -15 + (qIndex * 10);
+        const targetY = 10 - (nIndex * 3);
+        
+        // Animar hacia nueva posición
+        // ... usar GSAP o lerp manual
+      }
+    });
+  });
+};
+```
+
+**Toggle entre vistas:**
+```jsx
+<button
+  onClick={() => setViewMode(viewMode === 'spatial' ? 'timeline' : 'spatial')}
+  className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded backdrop-blur text-sm"
+>
+  {viewMode === 'spatial' ? 'Vista Timeline' : 'Vista Espacial'}
+</button>
+```
+
+---
+
+## REQUISITOS TÉCNICOS ADICIONALES
+
+### Performance
+- Usa `useMemo` para nodesData si es muy grande
+- Considera instanced meshes si >100 nodos
+- Throttle en eventos de mouse (especialmente hover)
+
+### UX
+- Todas las animaciones deben ser suaves (easing)
+- Feedback visual inmediato en todas las interacciones
+- Loading states durante operaciones async (storage)
+- Mensajes de confirmación para acciones destructivas
+
+### Accesibilidad
+- Tooltips descriptivos en todos los botones
+- Keyboard navigation (Tab, Enter, Escape)
+- Screen reader labels apropiados
+
+### Testing
+- Probar con 50+ nodos para verificar performance
+- Casos edge: nodos sin conexiones, todos los filtros desactivados, búsquedas sin resultados
+- Compatibilidad: Chrome, Firefox, Safari
+
+---
+
+## ESQUEMA DE IMPLEMENTACIÓN SUGERIDO
+
+1. **Fase 1 - Infraestructura**
+   - Implementar persistencia (mejora #1)
+   - Añadir campos status, progress, quarter a estructura de nodos
+   - Crear funciones helper de storage
+
+2. **Fase 2 - Visualización básica**
+   - Estado visual con anillos (mejora #2)
+   - Filtros por área y estado (mejora #3)
+   - Indicadores de progreso (mejora #7)
+
+3. **Fase 3 - Interacciones avanzadas**
+   - Búsqueda con navegación (mejora #4)
+   - Highlight de dependencias (mejora #5)
+
+4. **Fase 4 - Exportación y timeline**
+   - Exportar PNG/PDF (mejora #6)
+   - Vista timeline (mejora #8)
+
+5. **Fase 5 - Polish y testing**
+   - Animaciones suaves
+   - Error handling robusto
+   - Testing cross-browser
+
+---
+
+## NOTAS FINALES
+
+- Mantén la arquitectura actual con refs para Three.js
+- No uses Redux/Zustand innecesariamente, el estado local es suficiente
+- Considera extraer la lógica 3D a custom hooks (useThreeScene, useNodeInteraction)
+- Documenta funciones complejas (especialmente traverse de dependencias)
+- El objetivo es que un comité de dirección pueda explorar el mapa intuitivamente sin formación previa
+
+**Prioridad de implementación:** 1, 2, 3, 4, 5, 6, 7, 8 (en ese orden)
+
+¿Alguna pregunta sobre la implementación de alguna mejora específica?

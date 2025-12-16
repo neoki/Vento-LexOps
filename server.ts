@@ -587,7 +587,7 @@ app.post('/api/notifications/:id/sync-invento', requireAuth, async (req, res) =>
 });
 
 if (isProduction) {
-  app.get('*', (req, res) => {
+  app.get('/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
   });
 }
