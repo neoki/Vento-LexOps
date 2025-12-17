@@ -17,6 +17,7 @@ const Packages: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<LexnetPackage | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
 
   useEffect(() => {
     fetchPackages();
@@ -45,7 +46,7 @@ const Packages: React.FC = () => {
       const file = files[i];
       if (file.name.endsWith('.zip')) {
         formData.append('zip', file);
-      } else if (file.name.toLowerCase().includes('justificante')) {
+      } else if (file.name.toLowerCase().includes('justificante') || file.name.toLowerCase().endsWith('.pdf')) {
         formData.append('receipt', file);
       }
     }
@@ -58,16 +59,27 @@ const Packages: React.FC = () => {
       });
       
       if (response.ok) {
+        const result = await response.json();
         fetchPackages();
+        
+        if (result.packageId) {
+          await processPackage(result.packageId);
+        }
+      } else {
+        const error = await response.json();
+        console.error('Upload failed:', error);
+        alert('Error al subir: ' + (error.error || 'Error desconocido'));
       }
     } catch (error) {
       console.error('Upload error:', error);
+      alert('Error de conexión al subir el archivo');
     } finally {
       setUploading(false);
     }
   };
 
   const processPackage = async (packageId: number) => {
+    setProcessing(packageId);
     try {
       const response = await fetch(`/api/packages/${packageId}/process`, {
         method: 'POST',
@@ -75,10 +87,19 @@ const Packages: React.FC = () => {
       });
       
       if (response.ok) {
+        const result = await response.json();
+        console.log('Process result:', result);
         fetchPackages();
+      } else {
+        const error = await response.json();
+        console.error('Process failed:', error);
+        alert('Error al procesar: ' + (error.error || 'Error desconocido'));
       }
     } catch (error) {
       console.error('Process error:', error);
+      alert('Error de conexión al procesar');
+    } finally {
+      setProcessing(null);
     }
   };
 
@@ -185,7 +206,11 @@ const Packages: React.FC = () => {
                     >
                       <Eye size={18} />
                     </button>
-                    {(pkg.status === 'READY_FOR_ANALYSIS' || pkg.status === 'INCOMPLETE') && (
+                    {processing === pkg.id ? (
+                      <div className="p-2">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                      </div>
+                    ) : (pkg.status === 'READY_FOR_ANALYSIS' || pkg.status === 'INCOMPLETE') && (
                       <button 
                         onClick={() => processPackage(pkg.id)}
                         className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"

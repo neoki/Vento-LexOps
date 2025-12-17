@@ -105,11 +105,13 @@ router.post('/packages/:id/process', async (req: any, res) => {
     const packageId = parseInt(req.params.id);
     const userId = req.user?.id || 1;
 
+    console.log(`[Package Process] Starting processing for package ${packageId}, user ${userId}`);
     const result = await processPackage(packageId, userId);
+    console.log(`[Package Process] Completed for package ${packageId}:`, JSON.stringify(result, null, 2));
     res.json({ success: true, result });
-  } catch (error) {
-    console.error('Process error:', error);
-    res.status(500).json({ error: 'Error processing package' });
+  } catch (error: any) {
+    console.error('[Package Process] Error:', error);
+    res.status(500).json({ error: 'Error processing package: ' + error.message });
   }
 });
 

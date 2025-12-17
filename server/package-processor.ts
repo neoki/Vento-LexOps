@@ -41,6 +41,8 @@ export async function processPackage(
   packageId: number,
   userId: number
 ): Promise<PackageAnalysisResult | null> {
+  console.log(`[Processor] Starting package ${packageId}`);
+  
   const [pkg] = await db
     .select()
     .from(lexnetPackages)
@@ -51,6 +53,8 @@ export async function processPackage(
     throw new Error('Package not found or has no ZIP file');
   }
 
+  console.log(`[Processor] Found package ${pkg.packageId}, ZIP: ${pkg.zipPath}`);
+
   await db
     .update(lexnetPackages)
     .set({ status: 'READY_FOR_ANALYSIS', updatedAt: new Date() })
@@ -58,7 +62,10 @@ export async function processPackage(
 
   try {
     const extractedPath = storage.getExtractedPath(pkg.packageId);
+    console.log(`[Processor] Extracting to ${extractedPath}`);
+    
     const extractedDocs = await extractZipContents(pkg.zipPath, extractedPath, packageId);
+    console.log(`[Processor] Extracted ${extractedDocs.length} documents`);
     
     const analysisResults: PackageAnalysisResult = {
       packageId: pkg.packageId,
@@ -67,9 +74,13 @@ export async function processPackage(
     };
 
     const primaryDoc = extractedDocs.find(d => d.isPrimary);
+    console.log(`[Processor] Primary doc: ${primaryDoc?.fileName || 'none'}`);
+    
     if (primaryDoc && primaryDoc.extractedText) {
       try {
+        console.log(`[Processor] Running AI analysis...`);
         const aiAnalysis: AIAnalysisResult = await analyzeDocument(primaryDoc.extractedText, userId);
+        console.log(`[Processor] AI analysis result:`, aiAnalysis ? 'success' : 'empty');
         
         if (aiAnalysis) {
           analysisResults.notifications.push({
@@ -86,7 +97,7 @@ export async function processPackage(
           });
         }
       } catch (error) {
-        console.error('AI analysis error:', error);
+        console.error('[Processor] AI analysis error:', error);
       }
     }
 
@@ -99,8 +110,10 @@ export async function processPackage(
       })
       .where(eq(lexnetPackages.id, packageId));
 
+    console.log(`[Processor] Package ${packageId} marked as ANALYZED`);
     return analysisResults;
   } catch (error) {
+    console.error('[Processor] Error:', error);
     await db
       .update(lexnetPackages)
       .set({ 
