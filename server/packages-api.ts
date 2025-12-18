@@ -265,4 +265,95 @@ router.post('/triage/:id/resolve', async (req: any, res) => {
   }
 });
 
+router.delete('/packages/:id', async (req: any, res) => {
+  try {
+    const packageId = parseInt(req.params.id);
+    
+    await db.delete(documents).where(eq(documents.packageId, packageId));
+    await db.delete(notifications).where(eq(notifications.packageId, packageId));
+    await db.delete(lexnetPackages).where(eq(lexnetPackages.id, packageId));
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete package error:', error);
+    res.status(500).json({ error: 'Error deleting package' });
+  }
+});
+
+router.get('/notifications', async (req, res) => {
+  try {
+    const allNotifications = await db
+      .select()
+      .from(notifications)
+      .orderBy(desc(notifications.createdAt))
+      .limit(100);
+    res.json(allNotifications);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching notifications' });
+  }
+});
+
+router.post('/notifications/:id/approve', async (req: any, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    const userId = req.user?.id || 1;
+    
+    const [updated] = await db
+      .update(notifications)
+      .set({
+        status: 'APPROVED',
+        triageResolvedBy: userId,
+        triageResolvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(notifications.id, notificationId))
+      .returning();
+    
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Error approving notification' });
+  }
+});
+
+router.post('/notifications/:id/reject', async (req: any, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    const userId = req.user?.id || 1;
+    
+    const [updated] = await db
+      .update(notifications)
+      .set({
+        status: 'REJECTED',
+        triageResolvedBy: userId,
+        triageResolvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(notifications.id, notificationId))
+      .returning();
+    
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Error rejecting notification' });
+  }
+});
+
+router.delete('/notifications/clear', async (req: any, res) => {
+  try {
+    await db.delete(notifications);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Error clearing notifications' });
+  }
+});
+
+router.delete('/notifications/:id', async (req, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    await db.delete(notifications).where(eq(notifications.id, notificationId));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Error deleting notification' });
+  }
+});
+
 export default router;

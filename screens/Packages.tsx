@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Package, Upload, FileText, CheckCircle, AlertCircle, Clock, Eye, Play } from 'lucide-react';
+import { Package, Upload, FileText, CheckCircle, AlertCircle, Clock, Eye, Play, Trash2 } from 'lucide-react';
 
 interface LexnetPackage {
   id: number;
@@ -100,6 +100,26 @@ const Packages: React.FC = () => {
       alert('Error de conexión al procesar');
     } finally {
       setProcessing(null);
+    }
+  };
+
+  const deletePackage = async (packageId: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este paquete? También se eliminarán las notificaciones asociadas.')) {
+      return;
+    }
+    try {
+      const response = await fetch(`/api/packages/${packageId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (response.ok) {
+        fetchPackages();
+      } else {
+        alert('Error al eliminar el paquete');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Error de conexión al eliminar');
     }
   };
 
@@ -219,6 +239,13 @@ const Packages: React.FC = () => {
                         <Play size={18} />
                       </button>
                     )}
+                    <button 
+                      onClick={() => deletePackage(pkg.id)}
+                      className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Eliminar paquete"
+                    >
+                      <Trash2 size={18} />
+                    </button>
                   </div>
                 </div>
                 

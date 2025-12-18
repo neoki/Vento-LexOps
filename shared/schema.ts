@@ -5,7 +5,7 @@ import { z } from "zod";
 
 export const userRoleEnum = pgEnum('user_role', ['ADMIN', 'LAWYER', 'ASSISTANT']);
 export const aiProviderEnum = pgEnum('ai_provider', ['OPENAI', 'GEMINI']);
-export const notificationStatusEnum = pgEnum('notification_status', ['PENDING', 'TRIAGE_REQUIRED', 'REVIEWED', 'SYNCED', 'ERROR']);
+export const notificationStatusEnum = pgEnum('notification_status', ['PENDING', 'TRIAGE_REQUIRED', 'REVIEWED', 'APPROVED', 'REJECTED', 'SYNCED', 'ERROR']);
 export const priorityEnum = pgEnum('priority', ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 export const agentStatusEnum = pgEnum('agent_status', ['ONLINE', 'OFFLINE', 'ERROR']);
 
