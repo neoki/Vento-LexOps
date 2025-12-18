@@ -1,6 +1,7 @@
 import AdmZip from 'adm-zip';
 import path from 'path';
 import fs from 'fs';
+const pdfParse = require('pdf-parse');
 import { db } from './db';
 import { lexnetPackages, documents, users } from '../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -226,7 +227,14 @@ async function extractZipContents(
 }
 
 async function extractTextFromPdf(filePath: string): Promise<string> {
-  return `[Texto del PDF extraído de: ${path.basename(filePath)}]`;
+  try {
+    const buffer = fs.readFileSync(filePath);
+    const data = await pdfParse(buffer);
+    return data.text || '';
+  } catch (error) {
+    console.error('[Processor] PDF extraction error:', error);
+    return '';
+  }
 }
 
 export async function createPackageFromUpload(
