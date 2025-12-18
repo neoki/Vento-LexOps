@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+ <tns:DatosNotificacion xmlns:tns="http://justicia.es/SGPNotificacion/xsd-schemas/V1">
+<tns:Referencia>
+<tns:OrganoJudicial>
+<tns:CodigoSGP>1503644001</tns:CodigoSGP>
+<tns:CodigoCTEAJE>1503644001</tns:CodigoCTEAJE>
+<tns:Jurisdiccion>4</tns:Jurisdiccion>
+<tns:Descripcion>XDO. DO SOCIAL N. 1</tns:Descripcion>
+</tns:OrganoJudicial>
+<tns:NIG>1503644420230001776</tns:NIG>
+<tns:Procedimiento>
+<tns:IdentificadorProcedimiento>
+<tns:CodigoProcedimiento>PO</tns:CodigoProcedimiento>
+<tns:NumeroProcedimiento>0000772</tns:NumeroProcedimiento>
+<tns:AnyoProcedimiento>2023</tns:AnyoProcedimiento>
+</tns:IdentificadorProcedimiento>
+<tns:Descripcion>PROCEDIMIENTO ORDINARIO (PO) 0000772/2023</tns:Descripcion>
+</tns:Procedimiento>
+</tns:Referencia>
+<tns:DatosEspecificos xmlns:exnot="http://justicia.es/MINERVA/ExtensionNotificacion/xsd-schemas/V1">
+<exnot:AcontecimientoNotificado>
+<exnot:NumeroAcontecimiento>98</exnot:NumeroAcontecimiento>
+</exnot:AcontecimientoNotificado>
+</tns:DatosEspecificos>
+</tns:DatosNotificacion>

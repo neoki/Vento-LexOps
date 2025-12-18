@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { db } from './db';
 import { lexnetPackages, documents, notifications, executionPlans, executionActions } from '../shared/schema';
 import { eq, desc, and } from 'drizzle-orm';
@@ -353,6 +355,60 @@ router.delete('/notifications/:id', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Error deleting notification' });
+  }
+});
+
+router.get('/notifications/:id/documents', async (req, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    
+    const [notification] = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.id, notificationId))
+      .limit(1);
+    
+    if (!notification || !notification.packageId) {
+      return res.status(404).json({ error: 'Notification or package not found' });
+    }
+    
+    const docs = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.packageId, notification.packageId))
+      .orderBy(documents.sequenceNumber);
+    
+    res.json(docs);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching documents' });
+  }
+});
+
+router.get('/documents/:id/pdf', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    
+    const [doc] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, documentId))
+      .limit(1);
+    
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    const filePath = path.resolve(doc.filePath);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found on disk' });
+    }
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    res.status(500).json({ error: 'Error serving document' });
   }
 });
 

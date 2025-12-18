@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, Check, X, FileText, Brain, Calendar, Info, RefreshCcw, Inbox, Trash2 } from 'lucide-react';
+import { AlertCircle, Check, X, FileText, Brain, Calendar, Info, RefreshCcw, Inbox, Trash2, ChevronDown } from 'lucide-react';
 
 interface TriageNotification {
   id: number;
@@ -20,17 +20,34 @@ interface TriageNotification {
   createdAt: string;
 }
 
+interface Document {
+  id: number;
+  fileName: string;
+  mimeType: string;
+  isPrimary: boolean;
+  isReceipt: boolean;
+  fileSize: number;
+}
+
 const Triage: React.FC = () => {
   const [items, setItems] = useState<TriageNotification[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
 
   const selectedItem = items.find(i => i.id === selectedId);
 
   useEffect(() => {
     fetchNotifications();
   }, []);
+
+  useEffect(() => {
+    if (selectedId) {
+      fetchDocuments(selectedId);
+    }
+  }, [selectedId]);
 
   const fetchNotifications = async () => {
     try {
@@ -46,6 +63,24 @@ const Triage: React.FC = () => {
       console.error('Error fetching notifications:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDocuments = async (notificationId: number) => {
+    try {
+      const response = await fetch(`/api/notifications/${notificationId}/documents`, { credentials: 'include' });
+      if (response.ok) {
+        const docs = await response.json();
+        const pdfDocs = docs.filter((d: Document) => d.mimeType === 'application/pdf');
+        setDocuments(pdfDocs);
+        const primary = pdfDocs.find((d: Document) => d.isPrimary);
+        const firstNonReceipt = pdfDocs.find((d: Document) => !d.isReceipt);
+        setSelectedDocId(primary?.id || firstNonReceipt?.id || pdfDocs[0]?.id || null);
+      }
+    } catch (error) {
+      console.error('Error fetching documents:', error);
+      setDocuments([]);
+      setSelectedDocId(null);
     }
   };
 
@@ -214,10 +249,35 @@ const Triage: React.FC = () => {
             </div>
 
             <div className="flex-1 flex gap-4 overflow-hidden">
-              <div className="flex-1 bg-gray-800 rounded-xl flex flex-col items-center justify-center text-gray-400 border border-gray-700">
-                <FileText size={48} className="mb-4" />
-                <p>Vista Previa PDF</p>
-                <p className="text-xs mt-2 opacity-50">{selectedItem.lexnetId}</p>
+              <div className="flex-1 bg-gray-800 rounded-xl flex flex-col overflow-hidden border border-gray-700">
+                {documents.length > 1 && (
+                  <div className="p-2 bg-gray-900 border-b border-gray-700 flex items-center gap-2">
+                    <label className="text-xs text-gray-400">Documento:</label>
+                    <select
+                      value={selectedDocId || ''}
+                      onChange={(e) => setSelectedDocId(parseInt(e.target.value))}
+                      className="flex-1 text-xs bg-gray-700 text-white border-gray-600 rounded px-2 py-1"
+                    >
+                      {documents.map(doc => (
+                        <option key={doc.id} value={doc.id}>
+                          {doc.fileName} {doc.isPrimary ? '(Principal)' : ''} {doc.isReceipt ? '(Justificante)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {selectedDocId ? (
+                  <iframe
+                    src={`/api/documents/${selectedDocId}/pdf`}
+                    className="flex-1 w-full bg-white"
+                    title="Vista previa PDF"
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                    <FileText size={48} className="mb-4" />
+                    <p>No hay documentos PDF disponibles</p>
+                  </div>
+                )}
               </div>
 
               <div className="w-80 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col">
