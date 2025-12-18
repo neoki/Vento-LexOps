@@ -64,8 +64,8 @@ export async function processPackage(
     const extractedPath = storage.getExtractedPath(pkg.packageId);
     console.log(`[Processor] Extracting to ${extractedPath}`);
     
-    const extractedDocs = await extractZipContents(pkg.zipPath, extractedPath, packageId);
-    console.log(`[Processor] Extracted ${extractedDocs.length} documents`);
+    const { docs: extractedDocs, xmlData } = await extractZipContents(pkg.zipPath, extractedPath, packageId);
+    console.log(`[Processor] Extracted ${extractedDocs.length} documents, ${xmlData.length} XML records`);
     
     const analysisResults: PackageAnalysisResult = {
       packageId: pkg.packageId,
@@ -73,74 +73,112 @@ export async function processPackage(
       notifications: []
     };
 
-    const primaryDoc = extractedDocs.find(d => d.isPrimary);
-    console.log(`[Processor] Primary doc: ${primaryDoc?.fileName || 'none'}`);
-    
-    if (primaryDoc && primaryDoc.extractedText) {
-      try {
-        console.log(`[Processor] Running AI analysis...`);
-        const aiAnalysis: AIAnalysisResult = await analyzeDocument(primaryDoc.extractedText, userId);
-        console.log(`[Processor] AI analysis result:`, aiAnalysis ? 'success' : 'empty');
+    if (xmlData.length > 0) {
+      console.log(`[Processor] Creating notifications from ${xmlData.length} XML records`);
+      
+      for (const xml of xmlData) {
+        const notificationData = {
+          lexnetId: `${pkg.packageId}-${xml.nig || Date.now()}`,
+          court: xml.court || 'Sin determinar',
+          procedureNumber: xml.procedureNumber || 'Sin número',
+          procedureType: xml.procedureType,
+          confidence: 95,
+          evidences: ['Datos extraídos del XML estructurado de LexNET']
+        };
         
-        if (aiAnalysis) {
-          const notificationData = {
-            lexnetId: pkg.packageId,
-            court: aiAnalysis.court || 'Sin determinar',
-            procedureNumber: aiAnalysis.procedureNumber || 'Sin número',
-            procedureType: aiAnalysis.procedureType,
-            actType: aiAnalysis.actType,
-            parties: aiAnalysis.parties,
-            dates: aiAnalysis.dates,
-            deadlines: aiAnalysis.deadlines,
-            confidence: aiAnalysis.confidence || 50,
-            evidences: aiAnalysis.evidences || []
-          };
-          
-          analysisResults.notifications.push(notificationData);
-          
-          const [newNotification] = await db.insert(notifications).values({
-            lexnetId: pkg.packageId,
-            packageId: packageId,
-            receivedDate: new Date(),
-            downloadedDate: pkg.downloadDate,
-            court: aiAnalysis.court || 'Sin determinar',
-            procedureType: aiAnalysis.procedureType,
-            procedureNumber: aiAnalysis.procedureNumber || 'Sin número',
-            actType: aiAnalysis.actType,
-            parties: aiAnalysis.parties,
-            status: 'PENDING',
-            priority: aiAnalysis.priority || 'MEDIUM',
-            docType: aiAnalysis.docType,
-            aiConfidence: aiAnalysis.confidence,
-            aiReasoning: aiAnalysis.reasoning,
-            aiEvidences: aiAnalysis.evidences,
-            extractedDeadlines: aiAnalysis.extractedDeadlines,
-            extractedDates: aiAnalysis.dates,
-            suggestedCaseId: aiAnalysis.suggestedCaseId,
-            hasZip: true,
-            hasReceipt: pkg.hasReceipt,
-          }).returning();
-          
-          console.log(`[Processor] Created notification ${newNotification.id} for package ${packageId}`);
-        }
-      } catch (error) {
-        console.error('[Processor] AI analysis error:', error);
+        analysisResults.notifications.push(notificationData);
+        
+        const [newNotification] = await db.insert(notifications).values({
+          lexnetId: `${pkg.packageId}-${xml.nig || Date.now()}`,
+          packageId: packageId,
+          receivedDate: new Date(),
+          downloadedDate: pkg.downloadDate,
+          court: xml.court || 'Sin determinar',
+          procedureType: xml.procedureType,
+          procedureNumber: xml.procedureNumber || 'Sin número',
+          status: 'PENDING',
+          priority: 'MEDIUM',
+          aiConfidence: 95,
+          aiReasoning: ['Datos extraídos automáticamente del XML estructurado de LexNET'],
+          aiEvidences: [`NIG: ${xml.nig}`, `Jurisdicción: ${xml.jurisdiction}`],
+          hasZip: true,
+          hasReceipt: pkg.hasReceipt,
+        }).returning();
+        
+        console.log(`[Processor] Created notification ${newNotification.id} from XML for ${xml.court}`);
       }
     } else {
-      console.log(`[Processor] No primary document found, creating basic notification`);
-      const [newNotification] = await db.insert(notifications).values({
-        lexnetId: pkg.packageId,
-        packageId: packageId,
-        receivedDate: new Date(),
-        downloadedDate: pkg.downloadDate,
-        court: 'Pendiente de revisión',
-        procedureNumber: 'Sin número',
-        status: 'PENDING',
-        priority: 'MEDIUM',
-        hasZip: true,
-        hasReceipt: pkg.hasReceipt,
-      }).returning();
-      console.log(`[Processor] Created basic notification ${newNotification.id}`);
+      const primaryDoc = extractedDocs.find(d => d.isPrimary);
+      console.log(`[Processor] No XML data, using AI. Primary doc: ${primaryDoc?.fileName || 'none'}`);
+      
+      if (primaryDoc && primaryDoc.extractedText && !primaryDoc.requiresOcr) {
+        try {
+          console.log(`[Processor] Running AI analysis...`);
+          const aiAnalysis: AIAnalysisResult = await analyzeDocument(primaryDoc.extractedText, userId);
+          console.log(`[Processor] AI analysis result:`, aiAnalysis ? 'success' : 'empty');
+          
+          if (aiAnalysis) {
+            const notificationData = {
+              lexnetId: pkg.packageId,
+              court: aiAnalysis.court || 'Sin determinar',
+              procedureNumber: aiAnalysis.procedureNumber || 'Sin número',
+              procedureType: aiAnalysis.procedureType,
+              actType: aiAnalysis.actType,
+              parties: aiAnalysis.parties,
+              dates: aiAnalysis.dates,
+              deadlines: aiAnalysis.deadlines,
+              confidence: aiAnalysis.confidence || 50,
+              evidences: aiAnalysis.evidences || []
+            };
+            
+            analysisResults.notifications.push(notificationData);
+            
+            const [newNotification] = await db.insert(notifications).values({
+              lexnetId: pkg.packageId,
+              packageId: packageId,
+              receivedDate: new Date(),
+              downloadedDate: pkg.downloadDate,
+              court: aiAnalysis.court || 'Sin determinar',
+              procedureType: aiAnalysis.procedureType,
+              procedureNumber: aiAnalysis.procedureNumber || 'Sin número',
+              actType: aiAnalysis.actType,
+              parties: aiAnalysis.parties,
+              status: 'PENDING',
+              priority: aiAnalysis.priority || 'MEDIUM',
+              docType: aiAnalysis.docType,
+              aiConfidence: aiAnalysis.confidence,
+              aiReasoning: aiAnalysis.reasoning,
+              aiEvidences: aiAnalysis.evidences,
+              extractedDeadlines: aiAnalysis.extractedDeadlines,
+              extractedDates: aiAnalysis.dates,
+              suggestedCaseId: aiAnalysis.suggestedCaseId,
+              hasZip: true,
+              hasReceipt: pkg.hasReceipt,
+            }).returning();
+            
+            console.log(`[Processor] Created notification ${newNotification.id} for package ${packageId}`);
+          }
+        } catch (error) {
+          console.error('[Processor] AI analysis error:', error);
+        }
+      } else {
+        console.log(`[Processor] No extractable data, creating basic notification`);
+        const [newNotification] = await db.insert(notifications).values({
+          lexnetId: pkg.packageId,
+          packageId: packageId,
+          receivedDate: new Date(),
+          downloadedDate: pkg.downloadDate,
+          court: 'Pendiente de revisión manual',
+          procedureNumber: 'Sin número - requiere OCR',
+          status: 'PENDING',
+          priority: 'MEDIUM',
+          aiConfidence: 5,
+          aiReasoning: ['Los PDFs están escaneados y requieren OCR para extraer texto'],
+          hasZip: true,
+          hasReceipt: pkg.hasReceipt,
+        }).returning();
+        console.log(`[Processor] Created basic notification ${newNotification.id}`);
+      }
     }
 
     await db
@@ -169,14 +207,57 @@ export async function processPackage(
   }
 }
 
+interface XmlExtractedData {
+  court?: string;
+  procedureNumber?: string;
+  procedureType?: string;
+  nig?: string;
+  jurisdiction?: string;
+}
+
+function parseXmlData(xmlContent: string): XmlExtractedData {
+  const data: XmlExtractedData = {};
+  
+  const courtMatch = xmlContent.match(/<tns:OrganoJudicial>[\s\S]*?<tns:Descripcion>([^<]+)<\/tns:Descripcion>/);
+  if (courtMatch) {
+    data.court = courtMatch[1].trim();
+  }
+  
+  const procDescMatch = xmlContent.match(/<tns:Procedimiento>[\s\S]*?<tns:Descripcion>([^<]+)<\/tns:Descripcion>/);
+  if (procDescMatch) {
+    const fullDesc = procDescMatch[1].trim();
+    const procNumMatch = fullDesc.match(/(\d{7}\/\d{4})/);
+    if (procNumMatch) {
+      data.procedureNumber = procNumMatch[1];
+    }
+    const procTypeMatch = fullDesc.match(/^([^(]+)\s*\(/);
+    if (procTypeMatch) {
+      data.procedureType = procTypeMatch[1].trim();
+    }
+  }
+  
+  const nigMatch = xmlContent.match(/<tns:NIG>([^<]+)<\/tns:NIG>/);
+  if (nigMatch) {
+    data.nig = nigMatch[1].trim();
+  }
+  
+  const jurisdictionMatch = xmlContent.match(/<tns:Jurisdiccion>([^<]+)<\/tns:Jurisdiccion>/);
+  if (jurisdictionMatch) {
+    data.jurisdiction = jurisdictionMatch[1].trim();
+  }
+  
+  return data;
+}
+
 async function extractZipContents(
   zipPath: string,
   extractPath: string,
   packageId: number
-): Promise<ExtractedDocument[]> {
+): Promise<{ docs: ExtractedDocument[], xmlData: XmlExtractedData[] }> {
   const zip = new AdmZip(zipPath);
   const entries = zip.getEntries();
   const extractedDocs: ExtractedDocument[] = [];
+  const xmlDataList: XmlExtractedData[] = [];
 
   let sequenceNumber = 1;
   let primaryDocIndex = -1;
@@ -199,6 +280,7 @@ async function extractZipContents(
 
     const mimeType = storage.getMimeType(fileName);
     const isPdf = ext === '.pdf';
+    const isXml = ext === '.xml';
     const isReceipt = fileName.toLowerCase().includes('justificante') || 
                       fileName.toLowerCase().includes('acuse') ||
                       fileName.toLowerCase().includes('receipt');
@@ -216,6 +298,19 @@ async function extractZipContents(
       } catch (error) {
         requiresOcr = true;
         extractedText = '[Error extrayendo texto del PDF]';
+      }
+    }
+    
+    if (isXml && fileName.includes('DATOS ESTRUCTURADOS')) {
+      try {
+        const xmlContent = buffer.toString('utf-8');
+        const xmlData = parseXmlData(xmlContent);
+        if (xmlData.court || xmlData.procedureNumber) {
+          xmlDataList.push(xmlData);
+          console.log(`[Processor] Extracted XML data:`, xmlData);
+        }
+      } catch (error) {
+        console.error('[Processor] Error parsing XML:', error);
       }
     }
 
@@ -264,7 +359,7 @@ async function extractZipContents(
       .where(eq(documents.filePath, extractedDocs[primaryDocIndex].filePath));
   }
 
-  return extractedDocs;
+  return { docs: extractedDocs, xmlData: xmlDataList };
 }
 
 async function extractTextFromPdf(filePath: string): Promise<string> {

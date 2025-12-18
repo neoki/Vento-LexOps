@@ -22,7 +22,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeScreen, onNavigate, use
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { id: 'packages', label: 'Paquetes LexNET', icon: <Package size={20} /> },
-    { id: 'triage', label: 'Bandeja Triage', icon: <Inbox size={20} />, badge: 3 },
+    { id: 'triage', label: 'Bandeja Triaje', icon: <Inbox size={20} /> },
     { id: 'review', label: 'Revisión', icon: <CheckSquare size={20} /> },
     { id: 'notifications', label: 'Notificaciones', icon: <Bell size={20} /> },
     { id: 'cases', label: 'Expedientes', icon: <Briefcase size={20} /> },
@@ -73,11 +73,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeScreen, onNavigate, use
             >
               {item.icon}
               <span className="flex-1 text-left">{item.label}</span>
-              {item.badge && (
-                <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                  {item.badge}
-                </span>
-              )}
             </button>
           ))}
         </nav>

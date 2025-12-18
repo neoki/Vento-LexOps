@@ -7,7 +7,7 @@ const NotificationsList: React.FC = () => {
     const getStatusBadge = (status: NotificationStatus) => {
         switch (status) {
             case NotificationStatus.TRIAGE_REQUIRED:
-                return <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full text-xs font-bold border border-orange-200 flex items-center w-fit gap-1"><AlertTriangle size={10}/> Triage</span>;
+                return <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full text-xs font-bold border border-orange-200 flex items-center w-fit gap-1"><AlertTriangle size={10}/> Triaje</span>;
             case NotificationStatus.READY_FOR_INVENTO:
                 return <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold border border-blue-200 flex items-center w-fit gap-1"><Clock size={10}/> Ready</span>;
             case NotificationStatus.SYNCED:

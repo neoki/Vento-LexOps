@@ -104,7 +104,7 @@ const Dashboard: React.FC = () => {
             icon={<Download size={20} />} 
         />
         <StatCard 
-            title="Pendientes Triage" 
+            title="Pendientes Triaje" 
             value={stats.triage.toString()} 
             trend={stats.triage > 5 ? "High" : "Normal"} 
             type={stats.triage > 0 ? "negative" : "positive"} 
