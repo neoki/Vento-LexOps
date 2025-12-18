@@ -1,0 +1,156 @@
+2025-12-18 21:38:38.87
+74733b5a
+User
+at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2025-12-18 21:38:38.91
+74733b5a
+System
+command finished with error [npm run start]: exit status 1
+2025-12-18 21:38:43.72
+74733b5a
+User
+> NODE_ENV=production tsx server.ts
+2025-12-18 21:38:43.72
+74733b5a
+User
+> vento-lexops@0.0.0 start
+2025-12-18 21:38:45.30
+74733b5a
+User
+const pdfParse = require('pdf-parse');
+2025-12-18 21:38:45.30
+74733b5a
+User
+^
+2025-12-18 21:38:45.30
+74733b5a
+User
+at ModuleJob.run (node:internal/modules/esm/module_job:263:25)
+2025-12-18 21:38:45.30
+74733b5a
+User
+ReferenceError: require is not defined in ES module scope, you can use import instead
+2025-12-18 21:38:45.30
+74733b5a
+User
+at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2025-12-18 21:38:45.30
+74733b5a
+User
+Node.js v20.19.3
+2025-12-18 21:38:45.30
+74733b5a
+User
+/home/runner/workspace/server/package-processor.ts:4
+2025-12-18 21:38:45.30
+74733b5a
+User
+at async ModuleLoader.import (node:internal/modules/esm/loader:540:24)
+2025-12-18 21:38:45.30
+74733b5a
+User
+at (/home/runner/workspace/server/package-processor.ts:4:18)
+2025-12-18 21:38:45.34
+74733b5a
+System
+command finished with error [npm run start]: exit status 1
+2025-12-18 21:38:54.26
+74733b5a
+User
+> NODE_ENV=production tsx server.ts
+2025-12-18 21:38:54.26
+74733b5a
+User
+> vento-lexops@0.0.0 start
+2025-12-18 21:38:55.83
+74733b5a
+User
+at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2025-12-18 21:38:55.83
+74733b5a
+User
+^
+2025-12-18 21:38:55.83
+74733b5a
+User
+at async ModuleLoader.import (node:internal/modules/esm/loader:540:24)
+2025-12-18 21:38:55.83
+74733b5a
+User
+ReferenceError: require is not defined in ES module scope, you can use import instead
+2025-12-18 21:38:55.83
+74733b5a
+User
+/home/runner/workspace/server/package-processor.ts:4
+2025-12-18 21:38:55.83
+74733b5a
+User
+at (/home/runner/workspace/server/package-processor.ts:4:18)
+2025-12-18 21:38:55.83
+74733b5a
+User
+at ModuleJob.run (node:internal/modules/esm/module_job:263:25)
+2025-12-18 21:38:55.83
+74733b5a
+User
+const pdfParse = require('pdf-parse');
+2025-12-18 21:38:55.83
+74733b5a
+User
+Node.js v20.19.3
+2025-12-18 21:38:55.86
+74733b5a
+System
+command finished with error [npm run start]: exit status 1
+2025-12-18 21:39:03.24
+74733b5a
+User
+> NODE_ENV=production tsx server.ts
+2025-12-18 21:39:03.24
+74733b5a
+User
+> vento-lexops@0.0.0 start
+2025-12-18 21:39:04.85
+74733b5a
+User
+const pdfParse = require('pdf-parse');
+2025-12-18 21:39:04.85
+74733b5a
+User
+ReferenceError: require is not defined in ES module scope, you can use import instead
+2025-12-18 21:39:04.85
+74733b5a
+User
+Node.js v20.19.3
+2025-12-18 21:39:04.85
+74733b5a
+User
+at async ModuleLoader.import (node:internal/modules/esm/loader:540:24)
+2025-12-18 21:39:04.85
+74733b5a
+User
+at ModuleJob.run (node:internal/modules/esm/module_job:263:25)
+2025-12-18 21:39:04.85
+74733b5a
+User
+at (/home/runner/workspace/server/package-processor.ts:4:18)
+2025-12-18 21:39:04.85
+74733b5a
+User
+/home/runner/workspace/server/package-processor.ts:4
+2025-12-18 21:39:04.85
+74733b5a
+User
+at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2025-12-18 21:39:04.85
+74733b5a
+User
+^
+2025-12-18 21:39:04.89
+74733b5a
+System
+command finished with error [npm run start]: exit status 1
+2025-12-18 21:39:12.76
+74733b5a
+System
+crash loop detected

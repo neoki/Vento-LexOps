@@ -1,7 +1,6 @@
 import AdmZip from 'adm-zip';
 import path from 'path';
 import fs from 'fs';
-const pdfParse = require('pdf-parse');
 import { db } from './db';
 import { lexnetPackages, documents, users } from '../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -229,6 +228,8 @@ async function extractZipContents(
 async function extractTextFromPdf(filePath: string): Promise<string> {
   try {
     const buffer = fs.readFileSync(filePath);
+    const pdfParseModule = await import('pdf-parse') as any;
+    const pdfParse = pdfParseModule.default || pdfParseModule;
     const data = await pdfParse(buffer);
     return data.text || '';
   } catch (error) {
