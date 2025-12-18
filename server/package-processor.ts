@@ -2,7 +2,7 @@ import AdmZip from 'adm-zip';
 import path from 'path';
 import fs from 'fs';
 import { db } from './db';
-import { lexnetPackages, documents, users } from '../shared/schema';
+import { lexnetPackages, documents, users, notifications } from '../shared/schema';
 import { eq } from 'drizzle-orm';
 import * as storage from './storage-service';
 import { analyzeDocument, AIAnalysisResult } from './ai-service';
@@ -83,7 +83,7 @@ export async function processPackage(
         console.log(`[Processor] AI analysis result:`, aiAnalysis ? 'success' : 'empty');
         
         if (aiAnalysis) {
-          analysisResults.notifications.push({
+          const notificationData = {
             lexnetId: pkg.packageId,
             court: aiAnalysis.court || 'Sin determinar',
             procedureNumber: aiAnalysis.procedureNumber || 'Sin número',
@@ -94,11 +94,53 @@ export async function processPackage(
             deadlines: aiAnalysis.deadlines,
             confidence: aiAnalysis.confidence || 50,
             evidences: aiAnalysis.evidences || []
-          });
+          };
+          
+          analysisResults.notifications.push(notificationData);
+          
+          const [newNotification] = await db.insert(notifications).values({
+            lexnetId: pkg.packageId,
+            packageId: packageId,
+            receivedDate: new Date(),
+            downloadedDate: pkg.downloadDate,
+            court: aiAnalysis.court || 'Sin determinar',
+            procedureType: aiAnalysis.procedureType,
+            procedureNumber: aiAnalysis.procedureNumber || 'Sin número',
+            actType: aiAnalysis.actType,
+            parties: aiAnalysis.parties,
+            status: 'PENDING',
+            priority: aiAnalysis.priority || 'MEDIUM',
+            docType: aiAnalysis.docType,
+            aiConfidence: aiAnalysis.confidence,
+            aiReasoning: aiAnalysis.reasoning,
+            aiEvidences: aiAnalysis.evidences,
+            extractedDeadlines: aiAnalysis.extractedDeadlines,
+            extractedDates: aiAnalysis.dates,
+            suggestedCaseId: aiAnalysis.suggestedCaseId,
+            hasZip: true,
+            hasReceipt: pkg.hasReceipt,
+          }).returning();
+          
+          console.log(`[Processor] Created notification ${newNotification.id} for package ${packageId}`);
         }
       } catch (error) {
         console.error('[Processor] AI analysis error:', error);
       }
+    } else {
+      console.log(`[Processor] No primary document found, creating basic notification`);
+      const [newNotification] = await db.insert(notifications).values({
+        lexnetId: pkg.packageId,
+        packageId: packageId,
+        receivedDate: new Date(),
+        downloadedDate: pkg.downloadDate,
+        court: 'Pendiente de revisión',
+        procedureNumber: 'Sin número',
+        status: 'PENDING',
+        priority: 'MEDIUM',
+        hasZip: true,
+        hasReceipt: pkg.hasReceipt,
+      }).returning();
+      console.log(`[Processor] Created basic notification ${newNotification.id}`);
     }
 
     await db
