@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { db, pool } from './server/db';
 import { setupAuth, requireAuth, requireRole } from './server/auth';
@@ -10,7 +11,7 @@ import * as msGraph from './server/microsoft-graph';
 import * as inventoApi from './server/invento-api';
 import configApi from './server/config-api';
 import packagesApi from './server/packages-api';
-import { notifications, agents, agentLogs, users, userAiSettings, auditLogs, lexnetPackages } from './shared/schema';
+import { notifications, agents, agentLogs, users, userAiSettings, auditLogs, lexnetPackages, documents } from './shared/schema';
 import { eq, desc, sql, and } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -583,6 +584,69 @@ app.post('/api/notifications/:id/sync-invento', requireAuth, async (req, res) =>
     res.json({ success: true, caseId: result.caseId, isNewCase: result.isNewCase });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/notifications/:id/documents', requireAuth, async (req, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    const docs = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.notificationId, notificationId));
+    res.json(docs);
+  } catch (error) {
+    console.error('Error fetching documents:', error);
+    res.status(500).json({ error: 'Error obteniendo documentos' });
+  }
+});
+
+app.get('/api/documents/:id/pdf', requireAuth, async (req, res) => {
+  try {
+    const [doc] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, parseInt(req.params.id)))
+      .limit(1);
+
+    if (!doc) {
+      return res.status(404).json({ error: 'Documento no encontrado' });
+    }
+
+    if (!doc.filePath || !fs.existsSync(doc.filePath)) {
+      return res.status(404).json({ error: 'Archivo no encontrado en el sistema' });
+    }
+
+    const fileContent = fs.readFileSync(doc.filePath);
+    res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(fileContent);
+  } catch (error) {
+    console.error('Error serving PDF:', error);
+    res.status(500).json({ error: 'Error sirviendo PDF' });
+  }
+});
+
+app.get('/api/documents/:id/download', requireAuth, async (req, res) => {
+  try {
+    const [doc] = await db
+      .select()
+      .from(documents)
+      .where(eq(documents.id, parseInt(req.params.id)))
+      .limit(1);
+
+    if (!doc || !doc.filePath || !fs.existsSync(doc.filePath)) {
+      return res.status(404).json({ error: 'Documento no encontrado' });
+    }
+
+    const fileContent = fs.readFileSync(doc.filePath);
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${doc.fileName}"`);
+    res.send(fileContent);
+  } catch (error) {
+    console.error('Error downloading document:', error);
+    res.status(500).json({ error: 'Error descargando documento' });
   }
 });
 
