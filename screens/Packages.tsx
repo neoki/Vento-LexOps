@@ -37,22 +37,42 @@ const Packages: React.FC = () => {
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (!files) return;
+    if (!files || files.length === 0) {
+      alert('No se seleccionaron archivos');
+      return;
+    }
 
     setUploading(true);
     const formData = new FormData();
+    let hasZip = false;
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      console.log('File:', file.name, 'Size:', file.size, 'Type:', file.type);
       if (file.name.endsWith('.zip')) {
         formData.append('zip', file);
+        hasZip = true;
       } else if (file.name.toLowerCase().includes('justificante') || file.name.toLowerCase().endsWith('.pdf')) {
         formData.append('receipt', file);
       }
     }
 
+    if (!hasZip) {
+      alert('Por favor selecciona un archivo ZIP');
+      setUploading(false);
+      return;
+    }
+
     try {
       console.log('Uploading to /api/packages/upload...');
+      
+      const testResponse = await fetch('/api/packages', { credentials: 'include' });
+      if (testResponse.status === 401) {
+        alert('Tu sesión ha expirado. Por favor inicia sesión de nuevo.');
+        window.location.href = '/';
+        return;
+      }
+      
       const response = await fetch('/api/packages/upload', {
         method: 'POST',
         credentials: 'include',

@@ -74,15 +74,21 @@ router.get('/packages/:id', async (req, res) => {
   }
 });
 
-router.post('/packages/upload', upload.fields([
+router.post('/packages/upload', (req, res, next) => {
+  console.log('[Upload] Received upload request');
+  next();
+}, upload.fields([
   { name: 'zip', maxCount: 1 },
   { name: 'receipt', maxCount: 1 }
 ]), async (req: any, res) => {
+  console.log('[Upload] Processing files...');
   try {
     const zipFile = req.files?.['zip']?.[0];
     const receiptFile = req.files?.['receipt']?.[0];
     const lawyerId = req.user?.id || parseInt(req.body.lawyerId);
     const lexnetIds = req.body.lexnetIds ? JSON.parse(req.body.lexnetIds) : [];
+
+    console.log('[Upload] ZIP file:', zipFile?.originalname, 'Size:', zipFile?.size);
 
     if (!zipFile) {
       return res.status(400).json({ error: 'ZIP file is required' });
@@ -95,9 +101,10 @@ router.post('/packages/upload', upload.fields([
       lexnetIds
     );
 
+    console.log('[Upload] Package created:', packageId);
     res.json({ success: true, packageId });
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('[Upload] Error:', error);
     res.status(500).json({ error: 'Error uploading package' });
   }
 });
