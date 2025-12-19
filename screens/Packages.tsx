@@ -52,27 +52,36 @@ const Packages: React.FC = () => {
     }
 
     try {
+      console.log('Uploading to /api/packages/upload...');
       const response = await fetch('/api/packages/upload', {
         method: 'POST',
         credentials: 'include',
         body: formData
       });
       
+      console.log('Upload response status:', response.status);
+      
       if (response.ok) {
         const result = await response.json();
+        console.log('Upload result:', result);
         fetchPackages();
         
         if (result.packageId) {
           await processPackage(result.packageId);
         }
       } else {
-        const error = await response.json();
-        console.error('Upload failed:', error);
-        alert('Error al subir: ' + (error.error || 'Error desconocido'));
+        const errorText = await response.text();
+        console.error('Upload failed:', response.status, errorText);
+        try {
+          const error = JSON.parse(errorText);
+          alert('Error al subir: ' + (error.error || 'Error desconocido'));
+        } catch {
+          alert('Error al subir: ' + errorText);
+        }
       }
-    } catch (error) {
-      console.error('Upload error:', error);
-      alert('Error de conexión al subir el archivo');
+    } catch (error: any) {
+      console.error('Upload error:', error?.message || error);
+      alert('Error de conexión: ' + (error?.message || 'Revisa que el servidor esté activo'));
     } finally {
       setUploading(false);
     }
