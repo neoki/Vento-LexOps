@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Maximize2 } from 'lucide-react';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString();
 
 interface PdfViewerProps {
   url: string;
@@ -12,7 +16,7 @@ interface PdfViewerProps {
 const PdfViewer: React.FC<PdfViewerProps> = ({ url, fileName = 'documento.pdf' }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [scale, setScale] = useState(1.0);
@@ -27,7 +31,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ url, fileName = 'documento.pdf' }
       setError(null);
       
       try {
-        const loadingTask = pdfjsLib.getDocument({
+        const loadingTask = getDocument({
           url,
           withCredentials: true
         });
