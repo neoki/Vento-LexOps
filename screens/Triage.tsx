@@ -95,7 +95,7 @@ const Triage: React.FC = () => {
       });
       if (response.ok) {
         await fetchNotifications();
-        const pending = items.filter(i => i.status === 'PENDING' && i.id !== selectedItem.id);
+        const pending = items.filter(i => (i.status === 'EXTRACTED' || i.status === 'TRIAGE_REQUIRED') && i.id !== selectedItem.id);
         setSelectedId(pending.length > 0 ? pending[0].id : null);
       }
     } catch (error) {
@@ -115,7 +115,7 @@ const Triage: React.FC = () => {
       });
       if (response.ok) {
         await fetchNotifications();
-        const pending = items.filter(i => i.status === 'PENDING' && i.id !== selectedItem.id);
+        const pending = items.filter(i => (i.status === 'EXTRACTED' || i.status === 'TRIAGE_REQUIRED') && i.id !== selectedItem.id);
         setSelectedId(pending.length > 0 ? pending[0].id : null);
       }
     } catch (error) {
@@ -210,11 +210,16 @@ const Triage: React.FC = () => {
                       </span>
                     )}
                     <span className={`text-[10px] px-2 py-0.5 rounded-sm ${
-                      item.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                      item.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                      (item.status === 'EXTRACTED' || item.status === 'TRIAGE_REQUIRED') ? 'bg-yellow-100 text-yellow-700' :
+                      item.status === 'TRIAGED' ? 'bg-green-100 text-green-700' :
+                      item.status === 'CANCELLED_MANUAL' ? 'bg-red-100 text-red-700' :
                       'bg-gray-100 text-gray-600'
                     }`}>
-                      {item.status}
+                      {item.status === 'EXTRACTED' ? 'PENDIENTE' : 
+                       item.status === 'TRIAGE_REQUIRED' ? 'REQUIERE TRIAJE' :
+                       item.status === 'TRIAGED' ? 'APROBADO' :
+                       item.status === 'CANCELLED_MANUAL' ? 'RECHAZADO' :
+                       item.status}
                     </span>
                   </div>
                 </div>
@@ -356,14 +361,14 @@ const Triage: React.FC = () => {
                 <div className="p-4 border-t border-gray-100 bg-gray-50 flex gap-2">
                   <button 
                     onClick={handleReject}
-                    disabled={processing || selectedItem.status !== 'PENDING'}
+                    disabled={processing || (selectedItem.status !== 'EXTRACTED' && selectedItem.status !== 'TRIAGE_REQUIRED')}
                     className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 flex justify-center items-center gap-2 disabled:opacity-50"
                   >
                     <X size={16} /> Rechazar
                   </button>
                   <button 
                     onClick={handleApprove}
-                    disabled={processing || selectedItem.status !== 'PENDING'}
+                    disabled={processing || (selectedItem.status !== 'EXTRACTED' && selectedItem.status !== 'TRIAGE_REQUIRED')}
                     className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex justify-center items-center gap-2 disabled:opacity-50"
                   >
                     {processing ? <RefreshCcw className="animate-spin" size={16}/> : <><Check size={16} /> Aprobar</>}
