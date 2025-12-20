@@ -214,7 +214,7 @@ export async function saveExecutionPlan(
       planId: plan.id,
       actionType: action.type,
       actionOrder: i + 1,
-      status: 'PENDING',
+      status: 'PROPOSED',
       title: action.title,
       description: action.description,
       config: action.config,
@@ -322,7 +322,7 @@ export async function executePlan(planId: number): Promise<void> {
         await db
           .update(executionActions)
           .set({
-            status: 'ERROR',
+            status: 'FAILED',
             errorMessage: error instanceof Error ? error.message : 'Unknown error'
           })
           .where(eq(executionActions.id, action.id));

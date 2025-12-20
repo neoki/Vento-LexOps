@@ -100,7 +100,7 @@ export async function processPackage(
           procedureNumber: xml.procedureNumber || 'Sin número',
           docType: xml.docType,
           actType: xml.actType,
-          status: 'PENDING',
+          status: 'EXTRACTED',
           priority: 'MEDIUM',
           aiConfidence: 95,
           aiReasoning: ['Datos extraídos automáticamente del XML estructurado de LexNET'],
@@ -147,7 +147,7 @@ export async function processPackage(
               procedureNumber: aiAnalysis.procedureNumber || 'Sin número',
               actType: aiAnalysis.actType,
               parties: aiAnalysis.parties,
-              status: 'PENDING',
+              status: 'EXTRACTED',
               priority: aiAnalysis.priority || 'MEDIUM',
               docType: aiAnalysis.docType,
               aiConfidence: aiAnalysis.confidence,
@@ -174,7 +174,7 @@ export async function processPackage(
           downloadedDate: pkg.downloadDate,
           court: 'Pendiente de revisión manual',
           procedureNumber: 'Sin número - requiere OCR',
-          status: 'PENDING',
+          status: 'EXTRACTED',
           priority: 'MEDIUM',
           aiConfidence: 5,
           aiReasoning: ['Los PDFs están escaneados y requieren OCR para extraer texto'],
@@ -201,7 +201,7 @@ export async function processPackage(
     await db
       .update(lexnetPackages)
       .set({ 
-        status: 'ERROR',
+        status: 'FAILED',
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
         updatedAt: new Date() 
       })

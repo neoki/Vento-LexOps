@@ -19,7 +19,7 @@ async function fetchWithFallback<T>(endpoint: string, fallbackData: T): Promise<
 export const api = {
     getDashboardStats: async () => {
         return fetchWithFallback('/dashboard', {
-            stats: { incoming: 12, triage: 3, synced: 42 },
+            stats: { incoming: 12, triage: 3, executed: 0, reviewed: 0, packagesTotal: 0, packagesToday: 0, packagesIncomplete: 0, packagesAnalyzed: 0 },
             agentStatus: 'OFFLINE',
             recentLogs: MOCK_AGENT_LOGS
         });

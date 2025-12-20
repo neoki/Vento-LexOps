@@ -6,7 +6,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { db, pool } from './server/db';
 import { setupAuth, requireAuth, requireRole } from './server/auth';
-import { analyzeDocument, updateUserAISettings, getAISettings } from './server/ai-service';
+import { analyzeDocument, updateOfficeAISettings, getOfficeAISettings, updateUserAIPreference, isAIEnabled } from './server/ai-service';
 import * as msGraph from './server/microsoft-graph';
 import * as inventoApi from './server/invento-api';
 import configApi from './server/config-api';
@@ -86,8 +86,8 @@ app.get('/api/dashboard', async (req, res) => {
       stats: {
         incoming: allNotifications.length,
         triage: allNotifications.filter(n => n.status === 'TRIAGE_REQUIRED').length,
-        synced: allNotifications.filter(n => n.status === 'SYNCED').length,
-        reviewed: allNotifications.filter(n => n.status === 'REVIEWED').length,
+        executed: allNotifications.filter(n => n.status === 'EXECUTED').length,
+        reviewed: allNotifications.filter(n => n.status === 'TRIAGED' || n.status === 'PLAN_APPROVED').length,
         packagesTotal: allPackages.length,
         packagesToday: todayPackages.length,
         packagesIncomplete: allPackages.filter(p => p.status === 'INCOMPLETE').length,
@@ -272,10 +272,23 @@ app.get('/api/users/:id/ai-settings', requireAuth, async (req, res) => {
     if (req.user.id !== userId && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'No autorizado' });
     }
-    const settings = await getAISettings(userId);
+    
+    const [user] = await db.select({
+      useAi: users.useAi,
+      officeId: users.officeId
+    }).from(users).where(eq(users.id, userId)).limit(1);
+    
+    let officeSettings = null;
+    if (user?.officeId) {
+      officeSettings = await getOfficeAISettings(user.officeId);
+    }
+    
+    const aiEnabled = await isAIEnabled(userId);
+    
     res.json({
-      provider: settings.provider,
-      hasApiKey: !!settings.apiKey
+      userUseAi: user?.useAi ?? true,
+      officeProvider: officeSettings?.aiProvider || 'NONE',
+      isAIEnabled: aiEnabled
     });
   } catch (error) {
     console.error('Get AI settings error:', error);
@@ -289,15 +302,15 @@ app.put('/api/users/:id/ai-settings', requireAuth, async (req, res) => {
     if (req.user.id !== userId && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'No autorizado' });
     }
-    const { provider, apiKey } = req.body;
-    await updateUserAISettings(userId, provider, apiKey);
+    const { useAi } = req.body;
+    await updateUserAIPreference(userId, useAi);
     
     await logAudit(
       req.user.id,
-      'UPDATE_AI_SETTINGS',
+      'UPDATE_AI_PREFERENCE',
       'user',
       req.params.id,
-      { provider },
+      { useAi },
       req.ip
     );
 
@@ -305,6 +318,39 @@ app.put('/api/users/:id/ai-settings', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Update AI settings error:', error);
     res.status(500).json({ error: 'Error actualizando configuración AI' });
+  }
+});
+
+app.get('/api/offices/:id/ai-settings', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const officeId = parseInt(req.params.id);
+    const settings = await getOfficeAISettings(officeId);
+    res.json(settings);
+  } catch (error) {
+    console.error('Get office AI settings error:', error);
+    res.status(500).json({ error: 'Error obteniendo configuración AI de oficina' });
+  }
+});
+
+app.put('/api/offices/:id/ai-settings', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const officeId = parseInt(req.params.id);
+    const { provider, secretKeyName, temperature } = req.body;
+    await updateOfficeAISettings(officeId, provider, secretKeyName, temperature);
+    
+    await logAudit(
+      req.user!.id,
+      'UPDATE_OFFICE_AI_SETTINGS',
+      'office',
+      req.params.id,
+      { provider },
+      req.ip
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update office AI settings error:', error);
+    res.status(500).json({ error: 'Error actualizando configuración AI de oficina' });
   }
 });
 
@@ -575,7 +621,7 @@ app.post('/api/notifications/:id/sync-invento', requireAuth, async (req, res) =>
       .update(notifications)
       .set({
         inventoCaseId: result.caseId,
-        status: 'SYNCED',
+        status: 'EXECUTED',
         updatedAt: new Date()
       })
       .where(eq(notifications.id, notification.id));

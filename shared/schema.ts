@@ -4,15 +4,22 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const userRoleEnum = pgEnum('user_role', ['ADMIN', 'LAWYER', 'ASSISTANT']);
-export const aiProviderEnum = pgEnum('ai_provider', ['OPENAI', 'GEMINI']);
-export const notificationStatusEnum = pgEnum('notification_status', ['PENDING', 'TRIAGE_REQUIRED', 'REVIEWED', 'APPROVED', 'REJECTED', 'SYNCED', 'ERROR']);
+export const aiProviderEnum = pgEnum('ai_provider', ['OPENAI', 'GEMINI', 'NONE']);
+export const invitationStatusEnum = pgEnum('invitation_status', ['PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED']);
+export const notificationStatusEnum = pgEnum('notification_status', [
+  'EXTRACTED', 'TRIAGE_REQUIRED', 'TRIAGED', 
+  'PLAN_DRAFTED', 'PLAN_APPROVED', 
+  'EXECUTED', 'EXECUTION_FAILED', 'CANCELLED_MANUAL'
+]);
 export const priorityEnum = pgEnum('priority', ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 export const agentStatusEnum = pgEnum('agent_status', ['ONLINE', 'OFFLINE', 'ERROR']);
 
-export const packageStatusEnum = pgEnum('package_status', ['DOWNLOADING', 'INCOMPLETE', 'READY_FOR_ANALYSIS', 'ANALYZED', 'ERROR']);
+export const packageStatusEnum = pgEnum('package_status', ['RECEIVED', 'INCOMPLETE', 'READY_FOR_ANALYSIS', 'ANALYZED', 'ARCHIVED', 'FAILED']);
+export const packageSourceEnum = pgEnum('package_source', ['AGENT', 'MANUAL_UPLOAD']);
 export const executionPlanStatusEnum = pgEnum('execution_plan_status', ['DRAFT', 'PROPOSED', 'IN_REVIEW', 'APPROVED', 'EXECUTED', 'CANCELLED', 'ERROR']);
 export const actionTypeEnum = pgEnum('action_type', ['UPLOAD_INVENTO', 'CREATE_NOTE', 'CREATE_EVENT', 'SEND_EMAIL_LAWYER', 'SEND_EMAIL_CLIENT', 'REQUEST_POWER', 'DOWNLOAD_LINK', 'DETECT_COLLISION']);
-export const actionStatusEnum = pgEnum('action_status', ['PENDING', 'APPROVED', 'EXECUTED', 'SKIPPED', 'ERROR']);
+export const actionStatusEnum = pgEnum('action_status', ['PROPOSED', 'EDITED', 'PENDING', 'APPROVED', 'EXECUTED', 'SKIPPED', 'FAILED']);
+export const externalDownloadStatusEnum = pgEnum('external_download_status', ['PENDING', 'DOWNLOADING', 'COMPLETED', 'FAILED', 'ATTACHED']);
 
 export const offices = pgTable("offices", {
   id: serial("id").primaryKey(),
@@ -22,6 +29,13 @@ export const offices = pgTable("offices", {
   commonCalendarId: text("common_calendar_id"),
   teamsChannelId: text("teams_channel_id"),
   genericEmail: text("generic_email"),
+  joinCode: text("join_code").unique(),
+  aiProvider: aiProviderEnum("ai_provider").default('NONE'),
+  aiSecretKeyName: text("ai_secret_key_name"),
+  aiModelPreferences: jsonb("ai_model_preferences"),
+  aiTemperature: numeric("ai_temperature", { precision: 3, scale: 2 }).default("0.7"),
+  inventoApiUrl: text("invento_api_url"),
+  inventoSecretKeyName: text("invento_secret_key_name"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -61,9 +75,28 @@ export const users = pgTable("users", {
   categoryId: integer("category_id").references(() => categories.id),
   tutorUserId: integer("tutor_user_id"),
   teamsUserId: text("teams_user_id"),
+  useAi: boolean("use_ai").default(true),
   isActive: boolean("is_active").notNull().default(true),
+  isPendingApproval: boolean("is_pending_approval").default(false),
+  approvedBy: integer("approved_by"),
+  approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const userInvitations = pgTable("user_invitations", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  officeId: integer("office_id").references(() => offices.id).notNull(),
+  teamId: integer("team_id").references(() => teams.id),
+  role: userRoleEnum("role").notNull().default('ASSISTANT'),
+  inviteCode: text("invite_code").notNull().unique(),
+  status: invitationStatusEnum("status").notNull().default('PENDING'),
+  invitedBy: integer("invited_by").references(() => users.id).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedBy: integer("accepted_by").references(() => users.id),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const lexnetAccounts = pgTable("lexnet_accounts", {
@@ -95,9 +128,10 @@ export const lexnetPackages = pgTable("lexnet_packages", {
   packageId: text("package_id").notNull().unique(),
   lawyerId: integer("lawyer_id").references(() => users.id).notNull(),
   agentId: integer("agent_id").references(() => agents.id),
+  source: packageSourceEnum("source").notNull().default('AGENT'),
   lexnetIds: jsonb("lexnet_ids"),
   downloadDate: timestamp("download_date").notNull(),
-  status: packageStatusEnum("status").notNull().default('DOWNLOADING'),
+  status: packageStatusEnum("status").notNull().default('RECEIVED'),
   zipPath: text("zip_path"),
   zipHash: text("zip_hash"),
   receiptPath: text("receipt_path"),
@@ -140,7 +174,7 @@ export const notifications = pgTable("notifications", {
   procedureNumber: text("procedure_number").notNull(),
   actType: text("act_type"),
   parties: jsonb("parties"),
-  status: notificationStatusEnum("status").notNull().default('PENDING'),
+  status: notificationStatusEnum("status").notNull().default('EXTRACTED'),
   priority: priorityEnum("priority").notNull().default('MEDIUM'),
   docType: text("doc_type"),
   aiConfidence: integer("ai_confidence"),
@@ -201,6 +235,39 @@ export const executionActions = pgTable("execution_actions", {
   approvedBy: integer("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   executedAt: timestamp("executed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const caseMatches = pgTable("case_matches", {
+  id: serial("id").primaryKey(),
+  notificationId: integer("notification_id").references(() => notifications.id).notNull(),
+  inventoCaseId: text("invento_case_id").notNull(),
+  inventoCaseName: text("invento_case_name"),
+  inventoInstance: text("invento_instance"),
+  inventoFolder: text("invento_folder"),
+  confidence: integer("confidence").default(0),
+  matchReason: text("match_reason"),
+  isConfirmed: boolean("is_confirmed").default(false),
+  confirmedBy: integer("confirmed_by").references(() => users.id),
+  confirmedAt: timestamp("confirmed_at"),
+  isNewCase: boolean("is_new_case").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const externalDownloads = pgTable("external_downloads", {
+  id: serial("id").primaryKey(),
+  notificationId: integer("notification_id").references(() => notifications.id).notNull(),
+  sourceUrl: text("source_url").notNull(),
+  sourceType: text("source_type"),
+  fileName: text("file_name"),
+  filePath: text("file_path"),
+  fileSize: integer("file_size"),
+  status: externalDownloadStatusEnum("status").notNull().default('PENDING'),
+  downloadedAt: timestamp("downloaded_at"),
+  attachedToInventoAt: timestamp("attached_to_invento_at"),
+  inventoDocumentId: text("invento_document_id"),
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -411,6 +478,41 @@ export const notificationsRelations = relations(notifications, ({ one, many }) =
   }),
   documents: many(documents),
   executionPlans: many(executionPlans),
+  caseMatches: many(caseMatches),
+  externalDownloads: many(externalDownloads),
+}));
+
+export const caseMatchesRelations = relations(caseMatches, ({ one }) => ({
+  notification: one(notifications, {
+    fields: [caseMatches.notificationId],
+    references: [notifications.id],
+  }),
+  confirmer: one(users, {
+    fields: [caseMatches.confirmedBy],
+    references: [users.id],
+  }),
+}));
+
+export const externalDownloadsRelations = relations(externalDownloads, ({ one }) => ({
+  notification: one(notifications, {
+    fields: [externalDownloads.notificationId],
+    references: [notifications.id],
+  }),
+}));
+
+export const userInvitationsRelations = relations(userInvitations, ({ one }) => ({
+  office: one(offices, {
+    fields: [userInvitations.officeId],
+    references: [offices.id],
+  }),
+  team: one(teams, {
+    fields: [userInvitations.teamId],
+    references: [teams.id],
+  }),
+  inviter: one(users, {
+    fields: [userInvitations.invitedBy],
+    references: [users.id],
+  }),
 }));
 
 export const executionPlansRelations = relations(executionPlans, ({ one, many }) => ({
@@ -502,3 +604,9 @@ export type InsertAgent = typeof agents.$inferInsert;
 export type AgentLog = typeof agentLogs.$inferSelect;
 export type UserAiSettings = typeof userAiSettings.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type UserInvitation = typeof userInvitations.$inferSelect;
+export type InsertUserInvitation = typeof userInvitations.$inferInsert;
+export type CaseMatch = typeof caseMatches.$inferSelect;
+export type InsertCaseMatch = typeof caseMatches.$inferInsert;
+export type ExternalDownload = typeof externalDownloads.$inferSelect;
+export type InsertExternalDownload = typeof externalDownloads.$inferInsert;

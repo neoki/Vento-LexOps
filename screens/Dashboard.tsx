@@ -67,7 +67,7 @@ const LiveTerminal: React.FC<{ logs: AgentLog[], status: string }> = ({ logs, st
 };
 
 const Dashboard: React.FC = () => {
-  const [stats, setStats] = useState({ incoming: 0, triage: 0, synced: 0 });
+  const [stats, setStats] = useState({ incoming: 0, triage: 0, executed: 0 });
   const [agentStatus, setAgentStatus] = useState('OFFLINE');
   const [logs, setLogs] = useState<AgentLog[]>([]);
 
@@ -118,8 +118,8 @@ const Dashboard: React.FC = () => {
             icon={<Clock size={20} />} 
         />
         <StatCard 
-            title="Sincronizados Invento" 
-            value={stats.synced.toString()} 
+            title="Ejecutados" 
+            value={(stats.executed || 0).toString()} 
             trend="98% Success" 
             type="positive" 
             icon={<CheckCircle size={20} />} 

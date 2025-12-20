@@ -1,10 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { db } from "./db";
-import { userAiSettings } from "../shared/schema";
+import { users, offices } from "../shared/schema";
 import { eq } from "drizzle-orm";
 
-export type AIProvider = "OPENAI" | "GEMINI";
+export type AIProvider = "OPENAI" | "GEMINI" | "NONE";
 
 export interface AIAnalysisResult {
   confidence: number;
@@ -43,27 +43,80 @@ interface AIProviderConfig {
   apiKey: string | null;
   model?: string;
   temperature?: number;
+  userWantsAI: boolean;
 }
 
-async function getUserAIConfig(userId: number): Promise<AIProviderConfig> {
-  const [settings] = await db
-    .select()
-    .from(userAiSettings)
-    .where(eq(userAiSettings.userId, userId))
+async function getOfficeAIConfig(userId: number): Promise<AIProviderConfig> {
+  const [user] = await db
+    .select({
+      useAi: users.useAi,
+      officeId: users.officeId,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
     .limit(1);
 
-  if (settings) {
+  if (!user) {
     return {
-      provider: settings.provider as AIProvider,
-      apiKey: settings.apiKey,
-      temperature: settings.temperature ? parseFloat(settings.temperature) : 0.7,
+      provider: "NONE",
+      apiKey: null,
+      temperature: 0.7,
+      userWantsAI: false,
     };
   }
 
+  if (!user.useAi) {
+    return {
+      provider: "NONE",
+      apiKey: null,
+      temperature: 0.7,
+      userWantsAI: false,
+    };
+  }
+
+  if (!user.officeId) {
+    return {
+      provider: "GEMINI",
+      apiKey: process.env.GEMINI_API_KEY || null,
+      temperature: 0.7,
+      userWantsAI: true,
+    };
+  }
+
+  const [office] = await db
+    .select()
+    .from(offices)
+    .where(eq(offices.id, user.officeId))
+    .limit(1);
+
+  if (!office || office.aiProvider === 'NONE') {
+    return {
+      provider: "NONE",
+      apiKey: null,
+      temperature: 0.7,
+      userWantsAI: true,
+    };
+  }
+
+  let apiKey: string | null = null;
+  
+  if (office.aiSecretKeyName) {
+    apiKey = process.env[office.aiSecretKeyName] || null;
+  }
+  
+  if (!apiKey) {
+    if (office.aiProvider === 'GEMINI') {
+      apiKey = process.env.GEMINI_API_KEY || null;
+    } else if (office.aiProvider === 'OPENAI') {
+      apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || null;
+    }
+  }
+
   return {
-    provider: "GEMINI",
-    apiKey: process.env.GEMINI_API_KEY || null,
-    temperature: 0.7,
+    provider: office.aiProvider as AIProvider,
+    apiKey,
+    temperature: office.aiTemperature ? parseFloat(office.aiTemperature) : 0.7,
+    userWantsAI: true,
   };
 }
 
@@ -159,73 +212,63 @@ export async function analyzeDocument(
   documentText: string,
   userId: number
 ): Promise<AIAnalysisResult> {
-  const config = await getUserAIConfig(userId);
+  const config = await getOfficeAIConfig(userId);
 
-  if (!config.apiKey && config.provider === "OPENAI") {
-    if (process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
-      return analyzeWithOpenAI(
-        process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-        documentText,
-        config.temperature,
-        true
-      );
-    }
-    throw new Error("No se ha configurado una API key para OpenAI");
+  if (config.provider === "NONE" || !config.userWantsAI) {
+    throw new Error("El análisis con IA está desactivado para este usuario u oficina");
   }
 
-  if (!config.apiKey && config.provider === "GEMINI") {
-    if (process.env.GEMINI_API_KEY) {
-      return analyzeWithGemini(
-        process.env.GEMINI_API_KEY,
-        documentText,
-        config.temperature
-      );
-    }
-    throw new Error("No se ha configurado una API key para Gemini");
+  if (!config.apiKey) {
+    throw new Error(`No se ha configurado una API key para ${config.provider}`);
   }
 
   if (config.provider === "OPENAI") {
-    return analyzeWithOpenAI(config.apiKey!, documentText, config.temperature);
+    const useReplitIntegration = config.apiKey === process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+    return analyzeWithOpenAI(config.apiKey, documentText, config.temperature, useReplitIntegration);
   }
 
-  return analyzeWithGemini(config.apiKey!, documentText, config.temperature);
+  return analyzeWithGemini(config.apiKey, documentText, config.temperature);
 }
 
-export async function updateUserAISettings(
-  userId: number,
+export async function isAIEnabled(userId: number): Promise<boolean> {
+  const config = await getOfficeAIConfig(userId);
+  return config.provider !== "NONE" && config.userWantsAI && !!config.apiKey;
+}
+
+export async function updateOfficeAISettings(
+  officeId: number,
   provider: AIProvider,
-  apiKey?: string
+  secretKeyName?: string,
+  temperature?: number
 ): Promise<void> {
-  const [existing] = await db
-    .select()
-    .from(userAiSettings)
-    .where(eq(userAiSettings.userId, userId))
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(userAiSettings)
-      .set({
-        provider,
-        apiKey: apiKey || existing.apiKey,
-        updatedAt: new Date(),
-      })
-      .where(eq(userAiSettings.userId, userId));
-  } else {
-    await db.insert(userAiSettings).values({
-      userId,
-      provider,
-      apiKey,
-    });
-  }
+  await db
+    .update(offices)
+    .set({
+      aiProvider: provider,
+      aiSecretKeyName: secretKeyName,
+      aiTemperature: temperature?.toString() || "0.7",
+      updatedAt: new Date(),
+    })
+    .where(eq(offices.id, officeId));
 }
 
-export async function getAISettings(userId: number) {
-  const [settings] = await db
-    .select()
-    .from(userAiSettings)
-    .where(eq(userAiSettings.userId, userId))
+export async function getOfficeAISettings(officeId: number) {
+  const [office] = await db
+    .select({
+      aiProvider: offices.aiProvider,
+      aiSecretKeyName: offices.aiSecretKeyName,
+      aiTemperature: offices.aiTemperature,
+    })
+    .from(offices)
+    .where(eq(offices.id, officeId))
     .limit(1);
 
-  return settings || { provider: "GEMINI", apiKey: null };
+  return office || { aiProvider: "NONE", aiSecretKeyName: null, aiTemperature: "0.7" };
+}
+
+export async function updateUserAIPreference(userId: number, useAi: boolean): Promise<void> {
+  await db
+    .update(users)
+    .set({ useAi, updatedAt: new Date() })
+    .where(eq(users.id, userId));
 }
