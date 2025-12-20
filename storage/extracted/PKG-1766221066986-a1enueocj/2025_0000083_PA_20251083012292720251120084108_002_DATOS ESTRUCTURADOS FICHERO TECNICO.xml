@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+ <tns:DatosNotificacion xmlns:tns="http://justicia.es/SGPNotificacion/xsd-schemas/V1">
+<tns:Referencia>
+<tns:OrganoJudicial>
+<tns:CodigoSGP>3205445002</tns:CodigoSGP>
+<tns:CodigoCTEAJE>3205445002</tns:CodigoCTEAJE>
+<tns:Jurisdiccion>3</tns:Jurisdiccion>
+<tns:Descripcion>XDO. CONTENCIOSO/ADMTVO. N. 2</tns:Descripcion>
+</tns:OrganoJudicial>
+<tns:NIG>3205445320250000160</tns:NIG>
+<tns:Procedimiento>
+<tns:IdentificadorProcedimiento>
+<tns:CodigoProcedimiento>PA</tns:CodigoProcedimiento>
+<tns:NumeroProcedimiento>0000083</tns:NumeroProcedimiento>
+<tns:AnyoProcedimiento>2025</tns:AnyoProcedimiento>
+</tns:IdentificadorProcedimiento>
+<tns:Descripcion>PROCEDIMIENTO ABREVIADO (PA) 0000083/2025</tns:Descripcion>
+</tns:Procedimiento>
+</tns:Referencia>
+<tns:DatosEspecificos xmlns:exnot="http://justicia.es/MINERVA/ExtensionNotificacion/xsd-schemas/V1">
+<exnot:AcontecimientoNotificado>
+<exnot:NumeroAcontecimiento>187</exnot:NumeroAcontecimiento>
+</exnot:AcontecimientoNotificado>
+</tns:DatosEspecificos>
+</tns:DatosNotificacion>

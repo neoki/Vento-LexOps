@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Package, Upload, FileText, CheckCircle, AlertCircle, Clock, Eye, Play, Trash2 } from 'lucide-react';
+import { Package, Upload, FileText, CheckCircle, AlertCircle, Clock, Eye, Play, Trash2, X } from 'lucide-react';
 
 interface LexnetPackage {
   id: number;
@@ -12,16 +12,65 @@ interface LexnetPackage {
   errorMessage?: string;
 }
 
+interface Document {
+  id: number;
+  fileName: string;
+  mimeType: string;
+  isPrimary: boolean;
+  isReceipt: boolean;
+  fileSize: number;
+}
+
+interface Notification {
+  id: number;
+  court: string;
+  procedureNumber: string;
+  status: string;
+  docType?: string;
+}
+
 const Packages: React.FC = () => {
   const [packages, setPackages] = useState<LexnetPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<LexnetPackage | null>(null);
+  const [packageDocuments, setPackageDocuments] = useState<Document[]>([]);
+  const [packageNotifications, setPackageNotifications] = useState<Notification[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const [processing, setProcessing] = useState<number | null>(null);
 
   useEffect(() => {
     fetchPackages();
   }, []);
+
+  const viewPackageDetails = async (pkg: LexnetPackage) => {
+    setSelectedPackage(pkg);
+    setLoadingDetails(true);
+    setPackageDocuments([]);
+    setPackageNotifications([]);
+    
+    try {
+      const [docsRes, notifsRes] = await Promise.all([
+        fetch(`/api/packages/${pkg.id}/documents`, { credentials: 'include' }),
+        fetch('/api/notifications', { credentials: 'include' })
+      ]);
+      
+      if (docsRes.ok) {
+        const docs = await docsRes.json();
+        setPackageDocuments(docs.filter((d: Document) => d.mimeType === 'application/pdf'));
+      }
+      
+      if (notifsRes.ok) {
+        const allNotifs = await notifsRes.json();
+        const pkgNotifs = allNotifs.filter((n: any) => n.packageId === pkg.id);
+        setPackageNotifications(pkgNotifs);
+      }
+    } catch (error) {
+      console.error('Error loading package details:', error);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
 
   const fetchPackages = async () => {
     try {
@@ -249,7 +298,7 @@ const Packages: React.FC = () => {
                   
                   <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => setSelectedPackage(pkg)}
+                      onClick={() => viewPackageDetails(pkg)}
                       className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       title="Ver detalles"
                     >
@@ -291,13 +340,19 @@ const Packages: React.FC = () => {
 
       {selectedPackage && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedPackage(null)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-bold">Detalles del paquete</h2>
-              <p className="text-gray-500">{selectedPackage.packageId}</p>
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200 flex justify-between items-start">
+              <div>
+                <h2 className="text-xl font-bold">Detalles del paquete</h2>
+                <p className="text-gray-500">{selectedPackage.packageId}</p>
+              </div>
+              <button onClick={() => setSelectedPackage(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="text-sm text-gray-500">Estado</label>
                   <div className="mt-1">{getStatusBadge(selectedPackage.status, selectedPackage.hasReceipt)}</div>
@@ -323,7 +378,78 @@ const Packages: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {loadingDetails ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                      <FileText size={18} /> Documentos ({packageDocuments.length})
+                    </h3>
+                    {packageDocuments.length > 0 ? (
+                      <div className="border border-gray-200 rounded-lg divide-y">
+                        {packageDocuments.map(doc => (
+                          <div key={doc.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                            <div className="flex items-center gap-3">
+                              <FileText size={16} className="text-red-500" />
+                              <span className="text-sm">{doc.fileName}</span>
+                              {doc.isPrimary && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Principal</span>}
+                              {doc.isReceipt && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Justificante</span>}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-400">{(doc.fileSize / 1024).toFixed(1)} KB</span>
+                              <a 
+                                href={`/api/documents/${doc.id}/pdf`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800 text-sm"
+                              >
+                                Ver PDF
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 text-sm italic">No hay documentos extraídos</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                      <AlertCircle size={18} /> Notificaciones generadas ({packageNotifications.length})
+                    </h3>
+                    {packageNotifications.length > 0 ? (
+                      <div className="border border-gray-200 rounded-lg divide-y">
+                        {packageNotifications.map(notif => (
+                          <div key={notif.id} className="p-3 hover:bg-gray-50">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <div className="font-medium text-gray-800">{notif.court}</div>
+                                <div className="text-sm text-gray-500">Autos: {notif.procedureNumber}</div>
+                              </div>
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                notif.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                notif.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {notif.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 text-sm italic">No hay notificaciones. Procesa el paquete para generarlas.</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
+            
             <div className="p-6 border-t border-gray-200 flex justify-end gap-2">
               <button 
                 onClick={() => setSelectedPackage(null)}
@@ -331,7 +457,7 @@ const Packages: React.FC = () => {
               >
                 Cerrar
               </button>
-              {selectedPackage.status === 'READY_FOR_ANALYSIS' && (
+              {(selectedPackage.status === 'READY_FOR_ANALYSIS' || selectedPackage.status === 'INCOMPLETE') && (
                 <button 
                   onClick={() => {
                     processPackage(selectedPackage.id);

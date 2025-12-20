@@ -82,6 +82,8 @@ export async function processPackage(
           court: xml.court || 'Sin determinar',
           procedureNumber: xml.procedureNumber || 'Sin número',
           procedureType: xml.procedureType,
+          docType: xml.docType,
+          actType: xml.actType,
           confidence: 95,
           evidences: ['Datos extraídos del XML estructurado de LexNET']
         };
@@ -96,16 +98,18 @@ export async function processPackage(
           court: xml.court || 'Sin determinar',
           procedureType: xml.procedureType,
           procedureNumber: xml.procedureNumber || 'Sin número',
+          docType: xml.docType,
+          actType: xml.actType,
           status: 'PENDING',
           priority: 'MEDIUM',
           aiConfidence: 95,
           aiReasoning: ['Datos extraídos automáticamente del XML estructurado de LexNET'],
-          aiEvidences: [`NIG: ${xml.nig}`, `Jurisdicción: ${xml.jurisdiction}`],
+          aiEvidences: [`NIG: ${xml.nig}`, `Jurisdicción: ${xml.jurisdiction}`, `Tipo: ${xml.docType || 'No especificado'}`],
           hasZip: true,
           hasReceipt: pkg.hasReceipt,
         }).returning();
         
-        console.log(`[Processor] Created notification ${newNotification.id} from XML for ${xml.court}`);
+        console.log(`[Processor] Created notification ${newNotification.id} from XML for ${xml.court}, docType: ${xml.docType}`);
       }
     } else {
       const primaryDoc = extractedDocs.find(d => d.isPrimary);
@@ -211,6 +215,8 @@ interface XmlExtractedData {
   court?: string;
   procedureNumber?: string;
   procedureType?: string;
+  docType?: string;
+  actType?: string;
   nig?: string;
   jurisdiction?: string;
 }
@@ -244,6 +250,29 @@ function parseXmlData(xmlContent: string): XmlExtractedData {
   const jurisdictionMatch = xmlContent.match(/<tns:Jurisdiccion>([^<]+)<\/tns:Jurisdiccion>/);
   if (jurisdictionMatch) {
     data.jurisdiction = jurisdictionMatch[1].trim();
+  }
+  
+  const tipoActMatch = xmlContent.match(/<tns:TipoActo>[\s\S]*?<tns:Descripcion>([^<]+)<\/tns:Descripcion>/);
+  if (tipoActMatch) {
+    data.actType = tipoActMatch[1].trim();
+  }
+  
+  const tipoDocMatch = xmlContent.match(/<tns:TipoDocumento>([^<]+)<\/tns:TipoDocumento>/);
+  if (tipoDocMatch) {
+    data.docType = tipoDocMatch[1].trim();
+  }
+  
+  if (!data.docType) {
+    const descActo = xmlContent.match(/<tns:DescripcionActo>([^<]+)<\/tns:DescripcionActo>/);
+    if (descActo) {
+      const desc = descActo[1].toUpperCase();
+      if (desc.includes('SENTENCIA')) data.docType = 'SENTENCIA';
+      else if (desc.includes('AUTO')) data.docType = 'AUTO';
+      else if (desc.includes('DECRETO')) data.docType = 'DECRETO';
+      else if (desc.includes('PROVIDENCIA')) data.docType = 'PROVIDENCIA';
+      else if (desc.includes('DILIGENCIA')) data.docType = 'DILIGENCIA';
+      else if (desc.includes('CITACION') || desc.includes('CITACIÓN')) data.docType = 'CITACION';
+    }
   }
   
   return data;
