@@ -7,7 +7,7 @@ Vento LexOps es una plataforma de automatización legal para la gestión de noti
 - **Frontend**: React 19 + TypeScript + Vite (puerto 5000)
 - **Backend**: Express.js + TypeScript (puerto 3001)
 - **Database**: PostgreSQL con Drizzle ORM
-- **AI**: Google Gemini + OpenAI (seleccionable por usuario)
+- **AI**: Google Gemini + OpenAI (configurado a nivel de oficina, opt-in por usuario)
 - **Styling**: TailwindCSS (via CDN)
 - **Charts**: Recharts
 - **Icons**: Lucide React
@@ -125,6 +125,17 @@ npm run db:push  # Sincronizar schema DB
 ```
 
 ## Recent Changes
+- 2024-12-20: Refactorización arquitectónica mayor
+  - Sistema de invitación/aprobación para registro de usuarios (inviteCode o joinCode)
+  - IA configurada a nivel de oficina (aiProvider, aiSecretKeyName en tabla offices)
+  - Nuevo enum notification_status: EXTRACTED, TRIAGE_REQUIRED, TRIAGED, PLAN_DRAFTED, PLAN_APPROVED, EXECUTED, EXECUTION_FAILED, CANCELLED_MANUAL
+  - Nuevo enum package_source: AGENT, MANUAL_UPLOAD
+  - Nueva tabla case_matches para propuestas de expedientes Invento
+  - Nueva tabla external_downloads para tracking de descargas externas
+  - Nueva tabla user_invitations para sistema de invitaciones
+  - Endpoint de aprobación de usuarios: POST /api/users/:id/approve (ADMIN)
+  - Dashboard actualizado con métricas "executed" en lugar de "synced"
+
 - 2024-12-15: Implementación completa
   - PostgreSQL con Drizzle ORM
   - Autenticación con roles (ADMIN/LAWYER/ASSISTANT)
