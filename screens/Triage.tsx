@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, Check, X, FileText, Brain, Calendar, Info, RefreshCcw, Inbox, Trash2, ChevronDown, ExternalLink, Download } from 'lucide-react';
+import { AlertCircle, Check, X, FileText, Brain, Calendar, Info, RefreshCcw, Inbox, Trash2 } from 'lucide-react';
+import PdfViewer from '../components/PdfViewer';
 
 interface TriageNotification {
   id: number;
@@ -250,49 +251,27 @@ const Triage: React.FC = () => {
 
             <div className="flex-1 flex gap-4 overflow-hidden">
               <div className="flex-1 bg-gray-800 rounded-xl flex flex-col overflow-hidden border border-gray-700">
-                <div className="p-3 bg-gray-900 border-b border-gray-700">
-                  <div className="flex items-center gap-2 mb-2">
+                {documents.length > 1 && (
+                  <div className="p-2 bg-gray-900 border-b border-gray-700 flex items-center gap-2">
                     <label className="text-xs text-gray-400">Documento:</label>
-                    {documents.length > 0 && (
-                      <select
-                        value={selectedDocId || ''}
-                        onChange={(e) => setSelectedDocId(parseInt(e.target.value))}
-                        className="flex-1 text-xs bg-gray-700 text-white border-gray-600 rounded px-2 py-1"
-                      >
-                        {documents.map(doc => (
-                          <option key={doc.id} value={doc.id}>
-                            {doc.fileName} {doc.isPrimary ? '(Principal)' : ''} {doc.isReceipt ? '(Justificante)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                    <select
+                      value={selectedDocId || ''}
+                      onChange={(e) => setSelectedDocId(parseInt(e.target.value))}
+                      className="flex-1 text-xs bg-gray-700 text-white border-gray-600 rounded px-2 py-1"
+                    >
+                      {documents.map(doc => (
+                        <option key={doc.id} value={doc.id}>
+                          {doc.fileName} {doc.isPrimary ? '(Principal)' : ''} {doc.isReceipt ? '(Justificante)' : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  {selectedDocId && (
-                    <div className="flex gap-2">
-                      <a
-                        href={`/api/documents/${selectedDocId}/pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs py-2 px-3 rounded flex items-center justify-center gap-2"
-                      >
-                        <ExternalLink size={14} /> Abrir PDF en nueva pestaña
-                      </a>
-                      <a
-                        href={`/api/documents/${selectedDocId}/pdf`}
-                        download
-                        className="bg-gray-600 hover:bg-gray-500 text-white text-xs py-2 px-3 rounded flex items-center gap-2"
-                      >
-                        <Download size={14} />
-                      </a>
-                    </div>
-                  )}
-                </div>
+                )}
                 {selectedDocId ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-4">
-                    <FileText size={64} className="mb-4 text-gray-600" />
-                    <p className="text-center mb-2">El navegador bloquea la vista previa de PDF embebido</p>
-                    <p className="text-xs text-gray-500 text-center">Usa el botón "Abrir PDF en nueva pestaña" para ver el documento</p>
-                  </div>
+                  <PdfViewer 
+                    url={`/api/documents/${selectedDocId}/pdf`}
+                    fileName={documents.find(d => d.id === selectedDocId)?.fileName}
+                  />
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
                     <FileText size={48} className="mb-4" />
