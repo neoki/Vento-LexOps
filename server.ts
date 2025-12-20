@@ -11,7 +11,7 @@ import * as msGraph from './server/microsoft-graph';
 import * as inventoApi from './server/invento-api';
 import configApi from './server/config-api';
 import packagesApi from './server/packages-api';
-import { notifications, agents, agentLogs, users, userAiSettings, auditLogs, lexnetPackages, documents } from './shared/schema';
+import { notifications, agents, agentLogs, users, userAiSettings, auditLogs, lexnetPackages, documents, executionPlans, executionActions } from './shared/schema';
 import { eq, desc, sql, and } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -701,6 +701,207 @@ app.get('/api/documents/:id/download', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error downloading document:', error);
     res.status(500).json({ error: 'Error descargando documento' });
+  }
+});
+
+// Triage endpoints - Aprobar/Rechazar notificaciones
+app.post('/api/notifications/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    const [notification] = await db
+      .update(notifications)
+      .set({
+        status: 'TRIAGED',
+        triageResolvedBy: req.user!.id,
+        triageResolvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(notifications.id, notificationId))
+      .returning();
+
+    if (!notification) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+
+    await logAudit(req.user!.id, 'APPROVE_NOTIFICATION', 'notification', notificationId.toString(), {}, req.ip);
+    res.json({ success: true, notification });
+  } catch (error) {
+    console.error('Error approving notification:', error);
+    res.status(500).json({ error: 'Error aprobando notificación' });
+  }
+});
+
+app.post('/api/notifications/:id/reject', requireAuth, async (req, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    const [notification] = await db
+      .update(notifications)
+      .set({
+        status: 'CANCELLED_MANUAL',
+        triageResolvedBy: req.user!.id,
+        triageResolvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(notifications.id, notificationId))
+      .returning();
+
+    if (!notification) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+
+    await logAudit(req.user!.id, 'REJECT_NOTIFICATION', 'notification', notificationId.toString(), {}, req.ip);
+    res.json({ success: true, notification });
+  } catch (error) {
+    console.error('Error rejecting notification:', error);
+    res.status(500).json({ error: 'Error rechazando notificación' });
+  }
+});
+
+// Execution Plans endpoints
+app.get('/api/execution-plans', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = db.select().from(executionPlans).orderBy(desc(executionPlans.proposedAt));
+    
+    const allPlans = await query;
+    const filteredPlans = status 
+      ? allPlans.filter(p => p.status === status)
+      : allPlans;
+    
+    res.json(filteredPlans);
+  } catch (error) {
+    console.error('Error fetching execution plans:', error);
+    res.status(500).json({ error: 'Error obteniendo planes de ejecución' });
+  }
+});
+
+app.get('/api/execution-plans/:id', requireAuth, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.id);
+    const [plan] = await db
+      .select()
+      .from(executionPlans)
+      .where(eq(executionPlans.id, planId))
+      .limit(1);
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan no encontrado' });
+    }
+
+    const actions = await db
+      .select()
+      .from(executionActions)
+      .where(eq(executionActions.planId, planId))
+      .orderBy(executionActions.actionOrder);
+
+    res.json({ ...plan, actions });
+  } catch (error) {
+    console.error('Error fetching execution plan:', error);
+    res.status(500).json({ error: 'Error obteniendo plan de ejecución' });
+  }
+});
+
+app.post('/api/execution-plans/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.id);
+    const [plan] = await db
+      .update(executionPlans)
+      .set({
+        status: 'APPROVED',
+        approvedBy: req.user!.id,
+        approvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(executionPlans.id, planId))
+      .returning();
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan no encontrado' });
+    }
+
+    // Update associated notification status
+    await db
+      .update(notifications)
+      .set({ status: 'PLAN_APPROVED', updatedAt: new Date() })
+      .where(eq(notifications.id, plan.notificationId));
+
+    await logAudit(req.user!.id, 'APPROVE_PLAN', 'execution_plan', planId.toString(), {}, req.ip);
+    res.json({ success: true, plan });
+  } catch (error) {
+    console.error('Error approving plan:', error);
+    res.status(500).json({ error: 'Error aprobando plan' });
+  }
+});
+
+app.post('/api/execution-plans/:id/cancel', requireAuth, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.id);
+    const { reason } = req.body;
+    
+    const [plan] = await db
+      .update(executionPlans)
+      .set({
+        status: 'CANCELLED',
+        cancelledBy: req.user!.id,
+        cancelledAt: new Date(),
+        cancellationReason: reason || 'Cancelado por usuario',
+        updatedAt: new Date()
+      })
+      .where(eq(executionPlans.id, planId))
+      .returning();
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan no encontrado' });
+    }
+
+    await logAudit(req.user!.id, 'CANCEL_PLAN', 'execution_plan', planId.toString(), { reason }, req.ip);
+    res.json({ success: true, plan });
+  } catch (error) {
+    console.error('Error cancelling plan:', error);
+    res.status(500).json({ error: 'Error cancelando plan' });
+  }
+});
+
+app.post('/api/execution-plans/:id/execute', requireAuth, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.id);
+    
+    // Get plan and verify it's approved
+    const [plan] = await db
+      .select()
+      .from(executionPlans)
+      .where(eq(executionPlans.id, planId))
+      .limit(1);
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan no encontrado' });
+    }
+
+    if (plan.status !== 'APPROVED') {
+      return res.status(400).json({ error: 'El plan debe estar aprobado para ejecutarse' });
+    }
+
+    // Mark as executed (in a real system, this would trigger the actual actions)
+    await db
+      .update(executionPlans)
+      .set({
+        status: 'EXECUTED',
+        executedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(executionPlans.id, planId));
+
+    // Update notification status
+    await db
+      .update(notifications)
+      .set({ status: 'EXECUTED', updatedAt: new Date() })
+      .where(eq(notifications.id, plan.notificationId));
+
+    await logAudit(req.user!.id, 'EXECUTE_PLAN', 'execution_plan', planId.toString(), {}, req.ip);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error executing plan:', error);
+    res.status(500).json({ error: 'Error ejecutando plan' });
   }
 });
 
