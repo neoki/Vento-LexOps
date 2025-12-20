@@ -6,6 +6,7 @@ interface TriageNotification {
   id: number;
   lexnetId: string;
   court: string;
+  location?: string;
   procedureNumber: string;
   procedureType?: string;
   actType?: string;
@@ -37,8 +38,22 @@ const Triage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<number | null>(null);
+  
+  const [editCourt, setEditCourt] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editProcedureNumber, setEditProcedureNumber] = useState('');
+  const [editDocType, setEditDocType] = useState('');
 
   const selectedItem = items.find(i => i.id === selectedId);
+  
+  useEffect(() => {
+    if (selectedItem) {
+      setEditCourt(selectedItem.court || '');
+      setEditLocation(selectedItem.location || '');
+      setEditProcedureNumber(selectedItem.procedureNumber || '');
+      setEditDocType(selectedItem.docType || '');
+    }
+  }, [selectedItem?.id]);
 
   useEffect(() => {
     fetchNotifications();
@@ -85,10 +100,41 @@ const Triage: React.FC = () => {
     }
   };
 
+  const saveChanges = async (): Promise<boolean> => {
+    if (!selectedItem) return false;
+    try {
+      const response = await fetch(`/api/notifications/${selectedItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          court: editCourt,
+          location: editLocation || null,
+          procedureNumber: editProcedureNumber,
+          docType: editDocType || null
+        })
+      });
+      if (!response.ok) {
+        console.error('Error saving changes:', await response.text());
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      return false;
+    }
+  };
+
   const handleApprove = async () => {
     if (!selectedItem) return;
     setProcessing(true);
     try {
+      const saved = await saveChanges();
+      if (!saved) {
+        alert('Error guardando los cambios. Revisa los datos e intenta de nuevo.');
+        setProcessing(false);
+        return;
+      }
       const response = await fetch(`/api/notifications/${selectedItem.id}/approve`, {
         method: 'POST',
         credentials: 'include'
@@ -141,7 +187,7 @@ const Triage: React.FC = () => {
     }
   };
 
-  const pendingCount = items.filter(i => i.status === 'PENDING').length;
+  const pendingCount = items.filter(i => i.status === 'EXTRACTED' || i.status === 'TRIAGE_REQUIRED').length;
 
   if (loading) {
     return (
@@ -287,13 +333,25 @@ const Triage: React.FC = () => {
 
               <div className="w-80 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col">
                 <div className="p-4 border-b border-gray-100 font-bold text-gray-800">Datos Extraídos</div>
-                <div className="p-4 flex-1 overflow-y-auto space-y-4">
+                <div className="p-4 flex-1 overflow-y-auto space-y-3">
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Juzgado</label>
                     <input 
                       type="text" 
-                      className="w-full text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" 
-                      defaultValue={selectedItem.court} 
+                      className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:ring-blue-500 focus:border-blue-500" 
+                      value={editCourt}
+                      onChange={(e) => setEditCourt(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Localización</label>
+                    <input 
+                      type="text" 
+                      className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5" 
+                      value={editLocation}
+                      onChange={(e) => setEditLocation(e.target.value)}
+                      placeholder="Ej: A Coruña, Madrid..."
                     />
                   </div>
 
@@ -301,30 +359,57 @@ const Triage: React.FC = () => {
                     <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Procedimiento</label>
                     <input 
                       type="text" 
-                      className="w-full text-sm border-gray-300 rounded-md" 
-                      defaultValue={selectedItem.procedureNumber} 
+                      className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5" 
+                      value={editProcedureNumber}
+                      onChange={(e) => setEditProcedureNumber(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo Procedimiento</label>
+                    <input 
+                      type="text" 
+                      className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-gray-50" 
+                      defaultValue={selectedItem.procedureType || ''} 
+                      readOnly
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Tipo Documento</label>
-                    <select className="w-full text-sm border-gray-300 rounded-md" defaultValue={selectedItem.docType || ''}>
+                    <select 
+                      className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5" 
+                      value={editDocType}
+                      onChange={(e) => setEditDocType(e.target.value)}
+                    >
                       <option value="">Sin determinar</option>
-                      <option>SENTENCIA</option>
-                      <option>AUTO</option>
-                      <option>DECRETO</option>
-                      <option>PROVIDENCIA</option>
-                      <option>DILIGENCIA</option>
-                      <option>CITACION</option>
+                      <option value="SENTENCIA">Sentencia</option>
+                      <option value="AUTO">Auto</option>
+                      <option value="DECRETO">Decreto</option>
+                      <option value="PROVIDENCIA">Providencia</option>
+                      <option value="DILIGENCIA">Diligencia de Ordenación</option>
+                      <option value="CITACION">Citación</option>
+                      <option value="NOTIFICACION">Notificación</option>
+                      <option value="REQUERIMIENTO">Requerimiento</option>
+                      <option value="EMPLAZAMIENTO">Emplazamiento</option>
+                      <option value="OFICIO">Oficio</option>
+                      <option value="INFORME">Informe</option>
+                      <option value="OTRO">Otro</option>
                     </select>
+                    {selectedItem.docType && (
+                      <p className="text-[10px] text-green-600 mt-0.5">Detectado automáticamente</p>
+                    )}
+                    {!selectedItem.docType && (
+                      <p className="text-[10px] text-orange-600 mt-0.5">Seleccione manualmente</p>
+                    )}
                   </div>
 
                   {selectedItem.parties && (
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Partes</label>
-                      <div className="text-sm text-gray-700">
-                        {selectedItem.parties.client && <p>Cliente: {selectedItem.parties.client}</p>}
-                        {selectedItem.parties.opponent && <p>Contrario: {selectedItem.parties.opponent}</p>}
+                      <div className="text-sm text-gray-700 bg-gray-50 p-2 rounded border">
+                        {selectedItem.parties.client && <p><span className="font-medium">Cliente:</span> {selectedItem.parties.client}</p>}
+                        {selectedItem.parties.opponent && <p><span className="font-medium">Contrario:</span> {selectedItem.parties.opponent}</p>}
                       </div>
                     </div>
                   )}
@@ -351,7 +436,7 @@ const Triage: React.FC = () => {
                       <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Expediente Sugerido</label>
                       <input 
                         type="text" 
-                        className="w-full text-sm border-gray-300 rounded-md" 
+                        className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5" 
                         defaultValue={selectedItem.suggestedCaseId} 
                       />
                     </div>

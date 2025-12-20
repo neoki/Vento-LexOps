@@ -62,21 +62,18 @@ async function logAudit(userId: number | null, action: string, targetType: strin
 
 app.get('/api/dashboard', async (req, res) => {
   try {
-    const allNotifications = await db.select().from(notifications);
-    const allAgents = await db.select().from(agents);
-    const allPackages = await db.select().from(lexnetPackages);
+    const [allNotifications, allAgents, allPackages, recentLogs] = await Promise.all([
+      db.select().from(notifications),
+      db.select().from(agents),
+      db.select().from(lexnetPackages),
+      db.select().from(agentLogs).orderBy(desc(agentLogs.createdAt)).limit(10)
+    ]);
     
     const onlineAgents = allAgents.filter(a => 
       a.status === 'ONLINE' && 
       a.lastHeartbeat && 
       (Date.now() - new Date(a.lastHeartbeat).getTime() < 30000)
     );
-
-    const recentLogs = await db
-      .select()
-      .from(agentLogs)
-      .orderBy(desc(agentLogs.createdAt))
-      .limit(10);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -754,6 +751,35 @@ app.post('/api/notifications/:id/reject', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error rejecting notification:', error);
     res.status(500).json({ error: 'Error rechazando notificación' });
+  }
+});
+
+app.patch('/api/notifications/:id', requireAuth, async (req: any, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    const { court, location, procedureNumber, docType } = req.body;
+    
+    const updateData: any = { updatedAt: new Date() };
+    if (court !== undefined && court !== '') updateData.court = court;
+    if (location !== undefined) updateData.location = location || null;
+    if (procedureNumber !== undefined && procedureNumber !== '') updateData.procedureNumber = procedureNumber;
+    if (docType !== undefined) updateData.docType = docType || null;
+    
+    const [notification] = await db
+      .update(notifications)
+      .set(updateData)
+      .where(eq(notifications.id, notificationId))
+      .returning();
+
+    if (!notification) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+
+    await logAudit(req.user!.id, 'UPDATE_NOTIFICATION', 'notification', notificationId.toString(), updateData, req.ip);
+    res.json({ success: true, notification });
+  } catch (error) {
+    console.error('Error updating notification:', error);
+    res.status(500).json({ error: 'Error actualizando notificación' });
   }
 });
 

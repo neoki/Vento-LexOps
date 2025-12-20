@@ -6,6 +6,40 @@ import { eq } from "drizzle-orm";
 
 export type AIProvider = "OPENAI" | "GEMINI" | "NONE";
 
+function cleanAndParseJSON(text: string): any {
+  if (!text || text.trim() === '') {
+    return {};
+  }
+  
+  let cleaned = text.trim();
+  
+  const jsonStart = cleaned.indexOf('{');
+  const jsonEnd = cleaned.lastIndexOf('}');
+  
+  if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+    cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+  }
+  
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error('[AI Service] JSON parse error, attempting to fix:', e);
+    
+    cleaned = cleaned
+      .replace(/,\s*}/g, '}')
+      .replace(/,\s*]/g, ']')
+      .replace(/'/g, '"')
+      .replace(/\n/g, ' ');
+    
+    try {
+      return JSON.parse(cleaned);
+    } catch (e2) {
+      console.error('[AI Service] Failed to parse JSON after cleanup:', e2);
+      return {};
+    }
+  }
+}
+
 export interface AIAnalysisResult {
   confidence: number;
   reasoning: string[];
@@ -181,7 +215,7 @@ async function analyzeWithGemini(
   });
 
   const text = response.text || "{}";
-  return JSON.parse(text);
+  return cleanAndParseJSON(text);
 }
 
 async function analyzeWithOpenAI(
@@ -205,7 +239,7 @@ async function analyzeWithOpenAI(
   });
 
   const text = response.choices[0]?.message?.content || "{}";
-  return JSON.parse(text);
+  return cleanAndParseJSON(text);
 }
 
 export async function analyzeDocument(

@@ -170,6 +170,7 @@ export const notifications = pgTable("notifications", {
   receivedDate: timestamp("received_date").notNull(),
   downloadedDate: timestamp("downloaded_date"),
   court: text("court").notNull(),
+  location: text("location"),
   procedureType: text("procedure_type"),
   procedureNumber: text("procedure_number").notNull(),
   actType: text("act_type"),

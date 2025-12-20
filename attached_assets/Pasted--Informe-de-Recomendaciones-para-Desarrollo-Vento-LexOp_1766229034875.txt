@@ -1,0 +1,50 @@
+ Informe de Recomendaciones para Desarrollo (Vento LexOps)
+1. Implementación del Agente (Python) - Prioridad Crítica 🚨
+El archivo 
+agent.py
+ está actualmente vacío. Sin este componente, el sistema no puede funcionar automáticamente.
+
+Especificaciones para el LLM Desarrollador:
+
+Lenguaje y Librerías: Python 3.9+. Recomiendo usar requests para la API del Backend y selenium o playwright para la interacción con LexNet (ya que requiere navegación compleja con certificados). Para el manejo de certificados en Windows, pywin32 o acceder al almacén de certificados del sistema (wincertstore) es esencial.
+Lógica del Bucle Principal ("Demonio"):
+Arranque: Cargar configuración (AGENT_ID, BACKEND_URL, CERT_THUMBPRINT).
+Heartbeat: Ejecutar un POST /api/agent/heartbeat cada 30 segundos enviando métricas simples (uso de CPU/RAM) para que el Dashboard lo muestre "ONLINE".
+Polling de Notificaciones:
+Conectarse al portal web de LexNet cada X minutos.
+Detectar notificaciones nuevas (no leídas).
+Descargar el PDF principal y los adjuntos.
+Sincronización: Enviar los datos a POST /api/agent/notification (multipart/form-data).
+Manejo de Errores: Implementar Exponential Backoff. Si LexNet falla (algo común), esperar 1 min, luego 2, luego 4... no bloquear el script.
+2. Mejoras de Seguridad en Backend (
+server.ts
+)
+Actualmente, los endpoints /api/agent/* confían en cualquier petición que incluya un agentId.
+
+Problema: Cualquiera que sepa la URL de tu API puede inyectar datos falsos simulando ser un agente.
+Recomendación: Implementar Autenticación "Bearer Token" para Agentes.
+Generar una API Key única para cada agente (guardarla en una nueva columna api_key en la tabla agents).
+El 
+agent.py
+ debe enviar el header: Authorization: Bearer <AGENT_API_KEY>.
+Crear un middleware requireAgentAuth en 
+server.ts
+ para proteger las rutas /api/agent/*.
+3. Optimización del Motor de IA (
+server/ai-service.ts
+)
+Gestión del Prompt: El prompt de análisis está escrito directamente en el código ("hardcoded"). Sugiero moverlo a la base de datos o a una variable de entorno. Esto te permitirá ajustar las instrucciones de la IA (ej: "extrae también el número de cuenta bancaria") sin tener que tocar el código y redesplegar el servidor.
+Robustez JSON: Las respuestas de los LLM a veces incluyen texto antes del JSON (ej: "Aquí tienes el JSON..."). Asegúrate de que el parser limpie la respuesta (buscando el primer { y el último }) antes de hacer JSON.parse(), para evitar errores de sintaxis (SyntaxError).
+4. Base de Datos (
+shared/schema.ts
+)
+Índices Faltantes: Para mejorar el rendimiento cuando tengas miles de notificaciones:
+Añadir índices a notifications(status), notifications(lexnetId) y notifications(receivedDate).
+Esto hará que el Dashboard cargue instantáneamente incluso con mucho histórico.
+5. Frontend (
+App.tsx
+)
+Carga Paralela: En 
+server.ts
+ (línea 55), el endpoint /api/dashboard hace tres consultas a la base de datos de forma secuencial (await... await... await).
+Mejora: Usar Promise.all([db.select... , db.select...]). Esto ejecutará las tres consultas a la vez, reduciendo el tiempo de carga del Dashboard a la mitad.

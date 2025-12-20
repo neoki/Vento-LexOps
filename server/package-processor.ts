@@ -77,12 +77,27 @@ export async function processPackage(
       console.log(`[Processor] Creating notifications from ${xmlData.length} XML records`);
       
       for (const xml of xmlData) {
+        let detectedDocType = xml.docType;
+        if (!detectedDocType) {
+          const primaryDoc = extractedDocs.find(d => d.isPrimary && !d.isReceipt);
+          if (primaryDoc) {
+            detectedDocType = detectDocTypeFromFileName(primaryDoc.fileName);
+          }
+          if (!detectedDocType) {
+            const anyPdf = extractedDocs.find(d => d.mimeType === 'application/pdf' && !d.isReceipt);
+            if (anyPdf) {
+              detectedDocType = detectDocTypeFromFileName(anyPdf.fileName);
+            }
+          }
+        }
+        
         const notificationData = {
           lexnetId: `${pkg.packageId}-${xml.nig || Date.now()}`,
           court: xml.court || 'Sin determinar',
+          location: xml.location,
           procedureNumber: xml.procedureNumber || 'Sin número',
           procedureType: xml.procedureType,
-          docType: xml.docType,
+          docType: detectedDocType,
           actType: xml.actType,
           confidence: 95,
           evidences: ['Datos extraídos del XML estructurado de LexNET']
@@ -96,20 +111,21 @@ export async function processPackage(
           receivedDate: new Date(),
           downloadedDate: pkg.downloadDate,
           court: xml.court || 'Sin determinar',
+          location: xml.location,
           procedureType: xml.procedureType,
           procedureNumber: xml.procedureNumber || 'Sin número',
-          docType: xml.docType,
+          docType: detectedDocType,
           actType: xml.actType,
           status: 'EXTRACTED',
           priority: 'MEDIUM',
           aiConfidence: 95,
           aiReasoning: ['Datos extraídos automáticamente del XML estructurado de LexNET'],
-          aiEvidences: [`NIG: ${xml.nig}`, `Jurisdicción: ${xml.jurisdiction}`, `Tipo: ${xml.docType || 'No especificado'}`],
+          aiEvidences: [`NIG: ${xml.nig}`, `Localización: ${xml.location || 'No especificada'}`, `Jurisdicción: ${xml.jurisdiction}`, `Tipo: ${detectedDocType || 'No especificado'}`],
           hasZip: true,
           hasReceipt: pkg.hasReceipt,
         }).returning();
         
-        console.log(`[Processor] Created notification ${newNotification.id} from XML for ${xml.court}, docType: ${xml.docType}`);
+        console.log(`[Processor] Created notification ${newNotification.id} from XML for ${xml.court} (${xml.location}), docType: ${detectedDocType}`);
       }
     } else {
       const primaryDoc = extractedDocs.find(d => d.isPrimary);
@@ -213,13 +229,31 @@ export async function processPackage(
 
 interface XmlExtractedData {
   court?: string;
+  location?: string;
   procedureNumber?: string;
   procedureType?: string;
   docType?: string;
   actType?: string;
   nig?: string;
   jurisdiction?: string;
+  codigoSGP?: string;
 }
+
+const PROVINCE_MAP: Record<string, string> = {
+  '15': 'A Coruña', '27': 'Lugo', '32': 'Ourense', '36': 'Pontevedra',
+  '01': 'Álava', '20': 'Guipúzcoa', '48': 'Vizcaya', '31': 'Navarra',
+  '02': 'Albacete', '03': 'Alicante', '04': 'Almería', '05': 'Ávila',
+  '06': 'Badajoz', '07': 'Baleares', '08': 'Barcelona', '09': 'Burgos',
+  '10': 'Cáceres', '11': 'Cádiz', '12': 'Castellón', '13': 'Ciudad Real',
+  '14': 'Córdoba', '16': 'Cuenca', '17': 'Girona', '18': 'Granada',
+  '19': 'Guadalajara', '21': 'Huelva', '22': 'Huesca', '23': 'Jaén',
+  '24': 'León', '25': 'Lérida', '26': 'La Rioja', '28': 'Madrid',
+  '29': 'Málaga', '30': 'Murcia', '33': 'Asturias', '34': 'Palencia',
+  '35': 'Las Palmas', '37': 'Salamanca', '38': 'S/C Tenerife',
+  '39': 'Cantabria', '40': 'Segovia', '41': 'Sevilla', '42': 'Soria',
+  '43': 'Tarragona', '44': 'Teruel', '45': 'Toledo', '46': 'Valencia',
+  '47': 'Valladolid', '49': 'Zamora', '50': 'Zaragoza', '51': 'Ceuta', '52': 'Melilla'
+};
 
 function parseXmlData(xmlContent: string): XmlExtractedData {
   const data: XmlExtractedData = {};
@@ -227,6 +261,13 @@ function parseXmlData(xmlContent: string): XmlExtractedData {
   const courtMatch = xmlContent.match(/<tns:OrganoJudicial>[\s\S]*?<tns:Descripcion>([^<]+)<\/tns:Descripcion>/);
   if (courtMatch) {
     data.court = courtMatch[1].trim();
+  }
+  
+  const codigoSGPMatch = xmlContent.match(/<tns:CodigoSGP>([^<]+)<\/tns:CodigoSGP>/);
+  if (codigoSGPMatch) {
+    data.codigoSGP = codigoSGPMatch[1].trim();
+    const provinceCode = data.codigoSGP.substring(0, 2);
+    data.location = PROVINCE_MAP[provinceCode] || `Provincia ${provinceCode}`;
   }
   
   const procDescMatch = xmlContent.match(/<tns:Procedimiento>[\s\S]*?<tns:Descripcion>([^<]+)<\/tns:Descripcion>/);
@@ -276,6 +317,20 @@ function parseXmlData(xmlContent: string): XmlExtractedData {
   }
   
   return data;
+}
+
+function detectDocTypeFromFileName(fileName: string): string | undefined {
+  const upper = fileName.toUpperCase();
+  if (upper.includes('SENTENCIA')) return 'SENTENCIA';
+  if (upper.includes('AUTO ') || upper.includes('AUTO_') || upper.startsWith('AUTO')) return 'AUTO';
+  if (upper.includes('DECRETO')) return 'DECRETO';
+  if (upper.includes('PROVIDENCIA')) return 'PROVIDENCIA';
+  if (upper.includes('DILIGENCIA') || upper.includes('DIL.') || upper.includes('DIOR')) return 'DILIGENCIA';
+  if (upper.includes('CITACION') || upper.includes('CITACIÓN')) return 'CITACION';
+  if (upper.includes('NOTIFICACION') || upper.includes('NOTIFICACIÓN')) return 'NOTIFICACION';
+  if (upper.includes('REQUERIMIENTO')) return 'REQUERIMIENTO';
+  if (upper.includes('EMPLAZAMIENTO')) return 'EMPLAZAMIENTO';
+  return undefined;
 }
 
 async function extractZipContents(
