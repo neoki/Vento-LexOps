@@ -1,0 +1,193 @@
+Los 3 desajustes importantes
+1) “El usuario sube ZIP” no es el flujo real (debería ser opcional)
+
+En el día a día, nadie quiere estar subiendo ZIPs. Eso es un modo fallback/manual, útil para piloto o contingencia.
+
+Flujo real deseado:
+
+El Agente Windows entra a LexNET por certificado del abogado y sube los paquetes automáticamente.
+
+La UI muestra los paquetes ya “ingresados”.
+
+✅ Mantén “Subir paquete” como:
+
+Importación manual (cuando LexNET falla, o para incorporar históricos).
+
+2) Auto-rol “LAWYER” al registrarse es peligroso
+
+En un despacho, no puedes asumir que quien se registra es abogado. Y menos si esa persona podría ver notificaciones sensibles.
+
+✅ Lo correcto:
+
+Registro “invitación” o aprobación por ADMIN.
+
+El rol se asigna por Admin (o por “join code” controlado).
+
+3) “Cada usuario pone su API key (OpenAI/Gemini)” no encaja en compliance
+
+Eso complica auditoría, consistencia de resultados y seguridad (y mañana alguien mete una key personal y se lleva datos).
+
+✅ Mejor práctica:
+
+Proveedor de IA configurado por la organización (Admin).
+
+Opcional: “modo local / sin IA” para documentos sensibles o incidentes.
+
+Si quieres permitir varias IA, que sea a nivel tenant, no usuario individual.
+
+6 mejoras que te faltan para que sea “operativo real”
+A) Separar claramente “Notificación”, “Paquete” y “Caso/Expediente”
+
+Ahora lo mezclas un poco. Debe quedar así:
+
+Package: el ZIP + justificante + metadatos de descarga.
+
+Notification: cada resolución/elemento relevante dentro.
+
+CaseMatch: propuesta de expediente Invento y su instancia/carpeta.
+
+ExecutionPlan: acciones a ejecutar (Invento/Outlook/Email/Teams).
+
+Esto te permite trazabilidad e idempotencia.
+
+B) Estados más precisos (te ahorran caos)
+
+Tus estados son buenos pero faltan intermedios y consistencia.
+
+Recomendación:
+
+Package
+
+RECEIVED → INCOMPLETE (sin justificante) → READY_FOR_ANALYSIS → ANALYZED → ARCHIVED → FAILED
+
+Notification
+
+EXTRACTED → TRIAGE_REQUIRED → TRIAGED → PLAN_DRAFTED → PLAN_APPROVED → EXECUTED / EXECUTION_FAILED / CANCELLED_MANUAL
+
+Action dentro del Plan
+
+PROPOSED → EDITED → APPROVED → EXECUTED / FAILED / SKIPPED
+
+C) La “bandeja de triaje” debe permitir decidir tres cosas, no solo aprobar/rechazar
+
+En la práctica, el triage no es “sí/no”. Es:
+
+Qué es (tipo: sentencia, señalamiento, requerimiento…)
+
+A qué expediente va (y si no existe, crear)
+
+Qué acciones propone (plazos, agenda, emails, descargas externas…)
+
+✅ En la UI, además de “aprobar/rechazar”, debe haber:
+
+“Asignar expediente” (buscar/crear)
+
+“Definir responsable” (si hay ambigüedad)
+
+“Confirmar instancia” (1ª/RSU/RCUD/ejecución)
+
+D) El plan debe tener “preview exacto” de lo que se va a escribir/subir
+
+Tú lo dices, y está bien, pero ponlo como requisito duro:
+
+Invento preview
+
+Carpeta destino
+
+Nombres finales
+
+Numeración final
+
+Archivos exactos (incluye justificante)
+
+Nota/Llamada exacta (texto)
+
+Outlook preview
+
+calendario destino (JLC/JLV o el que sea)
+
+título/fechas/ubicación
+
+categoría (color) asignada
+
+adjuntos
+
+Email preview
+
+To/CC, asunto, cuerpo HTML, adjuntos
+
+“registrar correo en Invento” sí/no
+
+Y siempre el botón: “Cancelar: lo haré manual”.
+
+E) “Colores” bien modelados: Outlook ≠ Email
+
+Te falta formalizarlo como dos mecanismos configurables:
+
+Outlook Categories (lo que realmente pinta el evento con color)
+
+categoryName + outlookColor
+
+mapeo persona→categoría
+
+mapeo oficina→calendario compartido
+
+Email highlight (HTML)
+
+lawyerStyle (bg, bold, etc.)
+
+✅ Importante: el sistema debe funcionar aunque Outlook no tenga la categoría creada:
+
+o la crea (si permisos),
+
+o cae a “prefijo en título”: [PABLO] Plazo …
+
+F) Falta el “modo rechazados” y el “modo descargas externas”
+
+En tu texto aparece, pero no está integrado en UX.
+
+Añade dos bandejas:
+
+Rechazados
+
+listado, motivo, propuesta de reintento, aprobación, ejecución
+
+Descargas externas
+
+cuando la resolución trae enlace a grabación/expte admin:
+
+tarea “Descargar”
+
+adjuntar a Invento
+
+confirmar al letrado en el email diario
+
+Entonces… ¿es correcto lo que tienes?
+
+Sí, con matices:
+
+✅ Correcto / muy bien:
+
+Triage obligatorio
+
+Plans de ejecución aprobables
+
+XML primero, IA fallback
+
+Multi-oficina configurable
+
+Auditoría
+
+⚠️ Ajustar:
+
+ZIP upload como opción, no principal
+
+registro/roles bajo control de admin
+
+IA por tenant, no por usuario (recomendado)
+
+triage debe incluir “asignar expediente + instancia + responsable”
+
+modelado de colores: categorías Outlook vs HTML email
+
+incluir rechazados y descargas externas como flujos propios
