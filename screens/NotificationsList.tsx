@@ -68,11 +68,16 @@ const NotificationsList: React.FC = () => {
       const response = await fetch(`/api/notifications/${notificationId}/documents`, { credentials: 'include' });
       if (response.ok) {
         const docs: Document[] = await response.json();
-        for (const doc of docs) {
+        // Solo descargar el documento principal PDF, no todos
+        const primaryDoc = docs.find(d => d.mimeType === 'application/pdf' && d.isPrimary) ||
+                          docs.find(d => d.mimeType === 'application/pdf');
+        if (primaryDoc) {
           const link = document.createElement('a');
-          link.href = `/api/documents/${doc.id}/download`;
-          link.download = doc.fileName;
+          link.href = `/api/documents/${primaryDoc.id}/download`;
+          link.download = primaryDoc.fileName;
           link.click();
+        } else {
+          alert('No hay documento PDF disponible para descargar');
         }
       }
     } catch (error) {

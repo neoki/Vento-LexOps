@@ -119,6 +119,62 @@ app.get('/api/notifications', async (req, res) => {
   }
 });
 
+app.get('/api/deadlines', async (req, res) => {
+  try {
+    const allNotifications = await db
+      .select({
+        id: notifications.id,
+        court: notifications.court,
+        procedureNumber: notifications.procedureNumber,
+        extractedDeadlines: notifications.extractedDeadlines
+      })
+      .from(notifications)
+      .where(sql`${notifications.extractedDeadlines} IS NOT NULL`);
+    
+    interface DeadlineItem {
+      type?: string;
+      date: string;
+      description: string;
+      isFatal?: boolean;
+    }
+    
+    const deadlines: Array<{
+      id: string;
+      date: string;
+      description: string;
+      isFatal: boolean;
+      notificationId: number;
+      court: string;
+      procedureNumber: string;
+    }> = [];
+    
+    allNotifications.forEach(n => {
+      const extracted = n.extractedDeadlines as DeadlineItem[] | null;
+      if (extracted && Array.isArray(extracted)) {
+        extracted.forEach((d, idx) => {
+          if (d.date) {
+            const dateOnly = d.date.split('T')[0];
+            deadlines.push({
+              id: `${n.id}-${idx}`,
+              date: dateOnly,
+              description: d.description || d.type || 'Plazo',
+              isFatal: d.isFatal || d.type === 'FATAL' || false,
+              notificationId: n.id,
+              court: n.court || '',
+              procedureNumber: n.procedureNumber || ''
+            });
+          }
+        });
+      }
+    });
+    
+    res.json(deadlines);
+  } catch (error) {
+    console.error('Deadlines error:', error);
+    res.status(500).json({ error: 'Error obteniendo plazos' });
+  }
+});
+
 app.get('/api/notifications/:id', async (req, res) => {
   try {
     const [notification] = await db

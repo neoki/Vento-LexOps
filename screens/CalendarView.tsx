@@ -1,21 +1,38 @@
-import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, AlertCircle, Scale } from 'lucide-react';
-import { MOCK_NOTIFICATIONS } from '../constants';
-import { Deadline } from '../types';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, AlertCircle, Scale, RefreshCcw } from 'lucide-react';
+
+interface Deadline {
+    id: string;
+    date: string;
+    description: string;
+    isFatal: boolean;
+    notificationId: number;
+    court: string;
+    procedureNumber: string;
+}
 
 const CalendarView: React.FC = () => {
-    // Mock current date: May 2024
-    const [currentMonth, setCurrentMonth] = useState(new Date(2024, 4, 1));
+    const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [allDeadlines, setAllDeadlines] = useState<Deadline[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    // Extract all deadlines from notifications
-    const allDeadlines: (Deadline & { notificationId: string, court: string, case: string })[] = MOCK_NOTIFICATIONS.flatMap(n => 
-        n.extractedDeadlines.map(d => ({
-            ...d,
-            notificationId: n.id,
-            court: n.court,
-            case: n.procedureNumber
-        }))
-    );
+    useEffect(() => {
+        fetchDeadlines();
+    }, []);
+
+    const fetchDeadlines = async () => {
+        try {
+            const response = await fetch('/api/deadlines', { credentials: 'include' });
+            if (response.ok) {
+                const deadlines: Deadline[] = await response.json();
+                setAllDeadlines(deadlines);
+            }
+        } catch (error) {
+            console.error('Error fetching deadlines:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
     const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay(); // 0 is Sunday
@@ -30,17 +47,35 @@ const CalendarView: React.FC = () => {
         return allDeadlines.filter(d => d.date === dateStr);
     };
 
+    const prevMonth = () => {
+        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+    };
+
+    const nextMonth = () => {
+        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+    };
+
+    const monthName = currentMonth.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <RefreshCcw className="animate-spin text-blue-500" size={32} />
+            </div>
+        );
+    }
+
     return (
         <div className="h-full flex flex-col space-y-4">
              <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900">Agenda Procesal</h2>
-                    <p className="text-gray-500">Vista de señalamientos y plazos fatales.</p>
+                    <p className="text-gray-500">Vista de señalamientos y plazos fatales. {allDeadlines.length > 0 ? `${allDeadlines.length} plazos encontrados.` : 'No hay plazos registrados.'}</p>
                 </div>
                 <div className="flex items-center gap-4 bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
-                    <button className="p-2 hover:bg-gray-100 rounded-md text-gray-600"><ChevronLeft size={20} /></button>
-                    <span className="font-bold text-gray-800 w-32 text-center">Mayo 2024</span>
-                    <button className="p-2 hover:bg-gray-100 rounded-md text-gray-600"><ChevronRight size={20} /></button>
+                    <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-md text-gray-600"><ChevronLeft size={20} /></button>
+                    <span className="font-bold text-gray-800 w-40 text-center capitalize">{monthName}</span>
+                    <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-md text-gray-600"><ChevronRight size={20} /></button>
                 </div>
             </div>
 
@@ -78,7 +113,7 @@ const CalendarView: React.FC = () => {
                                                 {d.date.split('-')[2]}/{d.date.split('-')[1]}
                                             </div>
                                             <div className="truncate font-medium">{d.description}</div>
-                                            <div className="opacity-75 truncate">{d.case}</div>
+                                            <div className="opacity-75 truncate">{d.procedureNumber}</div>
                                         </div>
                                     ))}
                                 </div>
