@@ -1,0 +1,42 @@
+El sistema actual (Vento-LexOps) cubre aproximadamente el 80% de tu visión operativa. El Modelo de Datos y el flujo de los Planes de Ejecución están sorprendentemente alineados con tu diseño JSON, pero existen algunas lagunas funcionales específicas en la configuración organizativa y la automatización "batch" (correo diario).
+
+1. Coincidencias Totales (Lo que ya tienes)
+✅ Flujo de Triage: El flujo EXTRACTED -> TRIAGE_REQUIRED -> TRIAGED está implementado correctamente en backend y UI.
+✅ Estructura del Plan de Ejecución: El JSON que propones es casi idéntico al que genera 
+execution-plan-service.ts
+. El sistema ya soporta acciones como UPLOAD_INVENTO, CREATE_EVENT y SEND_EMAIL_LAWYER.
+✅ Lógica de Plazos y Señalamientos: El sistema ya calcula deadline y hearing e incluye eventos derivados (recordatorios 15 días antes, etc.) en el plan.
+✅ Tipos de Acciones: Los tipos UPLOAD_INVENTO, CREATE_NOTE, CREATE_EVENT, SEND_EMAIL_LAWYER están implementados.
+2. Las Lagunas (Lo que falta o difiere)
+A. Configuración de IA por Oficina (Modelo de Datos)
+Tu Visión: Configurar aiProvider, aiSecretKeyName, inventoApiUrl en la entidad offices.
+Realidad Actual: La configuración de IA (user_ai_settings) está vinculada al Usuario, no a la Oficina. La API de Invento lee de variables de entorno globales (process.env), no de la base de datos de la oficina.
+Acción Requerida: Mover la configuración de IA y URL de ERP a la tabla offices para que todos los usuarios de un despacho compartan la misma configuración.
+B. "Correo Diario Resumen" (Workflow 8)
+Tu Visión: Un correo que resume todo lo procesado en el día ("Hola, adjunto notificaciones...").
+Realidad Actual: El sistema solo genera correos individuales por cada notificación (SEND_EMAIL_LAWYER). No existe lógica de "agrupación" o "batch" al final del día.
+Acción Requerida: Crear un servicio DailyReportService o un Job programado que recopile lo ejecutado y envíe un único correo.
+C. Detección de Colisiones (DETECT_COLLISION)
+Tu Visión: Detectar si un señalamiento coincide con otro.
+Realidad Actual: Aunque el tipo de acción DETECT_COLLISION está definido en el esquema, el generador de planes (
+generateExecutionPlan
+) no implementa la lógica para crear esta acción. El sistema ciegamente propone crear el evento.
+Acción Requerida: Añadir lógica en la generación del plan que consulte eventos existentes (ms-graph.ts) antes de proponer uno nuevo.
+D. "Case Matches" (Modelo de Datos)
+Tu Visión: Una tabla caseMatches para gestionar propuestas de expediente.
+Realidad Actual: El sistema simplifica esto almacenando solo el suggestedCaseId y aiReasoning (JSON) directamente en la tabla notifications.
+Valoración: La implementación actual es más simple y probablemente suficiente para el MVP. Crear una tabla aparte añadiría complejidad innecesaria a menos que esperes que la IA devuelva múltiples candidatos con diferentes probabilidades (ej: Caso A 40%, Caso B 30%).
+E. Integración Real con Invento
+Tu Visión: "Guarda el paquete... propone el expediente correcto".
+Realidad Actual: La integración con Invento está simulada o depende de una API hardcodeada. Necesita ser agnóstica (Interfaz ErpAdapter) para que funcione con tu ERP real.
+3. Hoja de Ruta Sugerida
+Para alcanzar el 100% de tu visión, sugiero estos pasos inmediatos:
+
+Refactorizar Modelo de Oficina: Añadir campos de configuración IA/ERP a la tabla offices.
+Implementar "Agente LexNET": Llenar el vacío de 
+agent.py
+ para automatizar la descarga.
+Lógica de Colisiones: Mejorar 
+generateExecutionPlan
+ para verificar disponibilidad en calendario.
+Servicio de Reporte Diario: Crear el endpoint/job para el correo resumen.

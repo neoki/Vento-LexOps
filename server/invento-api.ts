@@ -1,282 +1,521 @@
 import { db } from './db';
-import { integrationTokens } from '../shared/schema';
+import { integrationTokens, offices } from '../shared/schema';
 import { eq, and } from 'drizzle-orm';
+import * as fs from 'fs';
+import * as path from 'path';
 
-const INVENTO_API_BASE = process.env.INVENTO_API_URL || 'https://api.invento.es/v1';
+const VENTO_API_BASE = 'https://ventoapi.vento.es';
 
-interface InventoCase {
-  id: string;
-  reference: string;
-  client: string;
-  type: string;
-  status: string;
-  openDate: string;
-  lawyer: string;
-  court?: string;
-  procedureNumber?: string;
+interface VentoAuthResponse {
+  token: string;
+  expiration?: string;
+  user?: {
+    id: number;
+    nombre: string;
+    email: string;
+  };
 }
 
-interface InventoDocument {
-  id: string;
-  name: string;
-  type: string;
-  uploadDate: string;
-  caseId: string;
+interface VentoExpediente {
+  idPresup: number;
+  referencia: string;
+  cliente: string;
+  tipo: string;
+  estado: string;
+  fechaAlta: string;
+  responsable: string;
+  juzgado?: string;
+  numProcedimiento?: string;
+  instancia?: string;
+  carpeta?: string;
 }
 
-async function getInventoApiKey(userId: number): Promise<string> {
-  const [token] = await db
-    .select()
-    .from(integrationTokens)
-    .where(and(
-      eq(integrationTokens.userId, userId),
-      eq(integrationTokens.provider, 'INVENTO')
-    ))
-    .limit(1);
+interface VentoTercero {
+  idTercero: number;
+  nombre: string;
+  tipo: string;
+  cif?: string;
+  email?: string;
+  telefono?: string;
+}
 
-  if (!token || !token.accessToken) {
-    const globalKey = process.env.INVENTO_API_KEY;
-    if (!globalKey) {
-      throw new Error('No hay API key de Invento configurada');
+interface VentoFileOperation {
+  command: 'upload' | 'download' | 'list' | 'create' | 'delete' | 'rename';
+  arguments: {
+    pathInfo?: string;
+    path?: string;
+    name?: string;
+    newName?: string;
+    data?: string;
+    content?: string;
+  };
+}
+
+interface InventoConfig {
+  apiUrl: string;
+  username?: string;
+  password?: string;
+  token?: string;
+}
+
+async function getInventoConfig(officeId?: number): Promise<InventoConfig> {
+  if (officeId) {
+    const [office] = await db
+      .select()
+      .from(offices)
+      .where(eq(offices.id, officeId))
+      .limit(1);
+
+    if (office?.inventoApiUrl) {
+      const secretKeyName = office.inventoSecretKeyName;
+      const token = secretKeyName ? process.env[secretKeyName] : undefined;
+      
+      return {
+        apiUrl: office.inventoApiUrl,
+        token
+      };
     }
-    return globalKey;
   }
 
-  return token.accessToken;
+  return {
+    apiUrl: process.env.INVENTO_API_URL || VENTO_API_BASE,
+    token: process.env.INVENTO_API_KEY
+  };
 }
 
-async function makeInventoRequest(
-  userId: number,
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  const apiKey = await getInventoApiKey(userId);
+async function getAuthToken(config: InventoConfig): Promise<string> {
+  if (config.token) {
+    return config.token;
+  }
 
-  return fetch(`${INVENTO_API_BASE}${endpoint}`, {
+  if (config.username && config.password) {
+    const response = await fetch(`${config.apiUrl}/api/Users/authenticate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: config.username,
+        password: config.password
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Error de autenticación con Vento API');
+    }
+
+    const data: VentoAuthResponse = await response.json();
+    return data.token;
+  }
+
+  throw new Error('No hay credenciales de Invento configuradas');
+}
+
+async function makeVentoRequest<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  officeId?: number
+): Promise<T> {
+  const config = await getInventoConfig(officeId);
+  const token = await getAuthToken(config);
+
+  const response = await fetch(`${config.apiUrl}${endpoint}`, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...options.headers
     }
   });
-}
-
-export async function searchCases(
-  userId: number,
-  query: {
-    reference?: string;
-    client?: string;
-    court?: string;
-    procedureNumber?: string;
-  }
-): Promise<InventoCase[]> {
-  const params = new URLSearchParams();
-  if (query.reference) params.append('reference', query.reference);
-  if (query.client) params.append('client', query.client);
-  if (query.court) params.append('court', query.court);
-  if (query.procedureNumber) params.append('procedureNumber', query.procedureNumber);
-
-  const response = await makeInventoRequest(
-    userId,
-    `/cases?${params.toString()}`
-  );
 
   if (!response.ok) {
-    throw new Error('Error al buscar expedientes en Invento');
+    const errorText = await response.text();
+    throw new Error(`Error Vento API (${response.status}): ${errorText}`);
   }
 
-  const data = await response.json();
-  return data.cases || [];
+  const text = await response.text();
+  if (!text) return {} as T;
+  
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text as unknown as T;
+  }
 }
 
-export async function getCase(userId: number, caseId: string): Promise<InventoCase | null> {
-  const response = await makeInventoRequest(userId, `/cases/${caseId}`);
+export async function searchExpedientes(
+  query: string,
+  officeId?: number
+): Promise<VentoExpediente[]> {
+  try {
+    const result = await makeVentoRequest<VentoExpediente[]>(
+      `/api/Presupuesto/Buscar?texto=${encodeURIComponent(query)}`,
+      { method: 'GET' },
+      officeId
+    );
+    return Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.error('Error buscando expedientes:', error);
+    return [];
+  }
+}
 
-  if (response.status === 404) {
+export async function getExpediente(
+  idPresup: number,
+  officeId?: number
+): Promise<VentoExpediente | null> {
+  try {
+    const result = await makeVentoRequest<VentoExpediente>(
+      `/api/Presupuesto?idPresup=${idPresup}`,
+      { method: 'GET' },
+      officeId
+    );
+    return result;
+  } catch (error) {
+    console.error('Error obteniendo expediente:', error);
     return null;
   }
-
-  if (!response.ok) {
-    throw new Error('Error al obtener expediente de Invento');
-  }
-
-  return response.json();
 }
 
-export async function getCaseDocuments(userId: number, caseId: string): Promise<InventoDocument[]> {
-  const response = await makeInventoRequest(userId, `/cases/${caseId}/documents`);
-
-  if (!response.ok) {
-    throw new Error('Error al obtener documentos del expediente');
-  }
-
-  const data = await response.json();
-  return data.documents || [];
-}
-
-export async function uploadDocumentToCase(
-  userId: number,
-  caseId: string,
-  document: {
-    name: string;
-    type: string;
-    content: Buffer;
-  }
-): Promise<InventoDocument> {
-  const formData = new FormData();
-  formData.append('name', document.name);
-  formData.append('type', document.type);
-  formData.append('file', new Blob([document.content]), document.name);
-
-  const apiKey = await getInventoApiKey(userId);
-
-  const response = await fetch(`${INVENTO_API_BASE}/cases/${caseId}/documents`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: formData
-  });
-
-  if (!response.ok) {
-    throw new Error('Error al subir documento a Invento');
-  }
-
-  return response.json();
-}
-
-export async function createCase(
-  userId: number,
-  caseData: {
-    reference: string;
-    client: string;
-    type: string;
-    court?: string;
-    procedureNumber?: string;
-    lawyerId?: string;
-    notes?: string;
-  }
-): Promise<InventoCase> {
-  const response = await makeInventoRequest(userId, '/cases', {
-    method: 'POST',
-    body: JSON.stringify(caseData)
-  });
-
-  if (!response.ok) {
-    throw new Error('Error al crear expediente en Invento');
-  }
-
-  return response.json();
-}
-
-export async function linkNotificationToCase(
-  userId: number,
-  caseId: string,
-  notificationData: {
-    lexnetId: string;
-    receivedDate: string;
-    court: string;
-    procedureNumber: string;
-    docType: string;
-    rawPayload?: any;
-  }
-): Promise<void> {
-  const response = await makeInventoRequest(userId, `/cases/${caseId}/notifications`, {
-    method: 'POST',
-    body: JSON.stringify(notificationData)
-  });
-
-  if (!response.ok) {
-    throw new Error('Error al vincular notificación al expediente');
+export async function getExpedientePresup(
+  idPresup: number,
+  officeId?: number
+): Promise<any> {
+  try {
+    const result = await makeVentoRequest<any>(
+      `/api/Presupuesto/presup?idPresup=${idPresup}`,
+      { method: 'GET' },
+      officeId
+    );
+    return result;
+  } catch (error) {
+    console.error('Error obteniendo presupuesto:', error);
+    return null;
   }
 }
 
-export async function syncNotificationWithInvento(
-  userId: number,
-  notification: {
-    id: number;
-    lexnetId: string;
-    court: string;
-    procedureNumber: string;
-    docType: string | null;
-    rawPayload: any;
-    receivedDate: Date;
-  }
-): Promise<{ caseId: string; isNewCase: boolean }> {
-  const cases = await searchCases(userId, {
-    court: notification.court,
-    procedureNumber: notification.procedureNumber
-  });
+export async function uploadFileToExpediente(
+  idPresup: number,
+  filePath: string,
+  fileName: string,
+  targetFolder: string,
+  officeId?: number
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const fileContent = fs.readFileSync(filePath);
+    const base64Content = fileContent.toString('base64');
+    
+    const targetPath = `expedientes/${idPresup}/${targetFolder}`;
+    
+    const operation: VentoFileOperation = {
+      command: 'upload',
+      arguments: {
+        pathInfo: targetPath,
+        name: fileName,
+        data: base64Content
+      }
+    };
 
-  let caseId: string;
-  let isNewCase = false;
+    const config = await getInventoConfig(officeId);
+    const token = await getAuthToken(config);
 
-  if (cases.length > 0) {
-    caseId = cases[0].id;
-  } else {
-    const newCase = await createCase(userId, {
-      reference: `LX-${notification.lexnetId}`,
-      client: 'Pendiente asignar',
-      type: 'JUDICIAL',
-      court: notification.court,
-      procedureNumber: notification.procedureNumber
+    const response = await fetch(`${config.apiUrl}/api/FileManager/file-manager-file-system-scripts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(operation)
     });
-    caseId = newCase.id;
-    isNewCase = true;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Error subiendo archivo: ${errorText}`);
+    }
+
+    return { success: true, message: `Archivo ${fileName} subido correctamente` };
+  } catch (error) {
+    console.error('Error subiendo archivo a expediente:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'Error desconocido' 
+    };
   }
-
-  await linkNotificationToCase(userId, caseId, {
-    lexnetId: notification.lexnetId,
-    receivedDate: notification.receivedDate.toISOString(),
-    court: notification.court,
-    procedureNumber: notification.procedureNumber,
-    docType: notification.docType || 'DESCONOCIDO',
-    rawPayload: notification.rawPayload
-  });
-
-  return { caseId, isNewCase };
 }
 
-export async function hasInventoIntegration(userId: number): Promise<boolean> {
-  const globalKey = process.env.INVENTO_API_KEY;
-  if (globalKey) return true;
+export async function listExpedienteFiles(
+  idPresup: number,
+  folder?: string,
+  officeId?: number
+): Promise<string[]> {
+  try {
+    const targetPath = folder 
+      ? `expedientes/${idPresup}/${folder}`
+      : `expedientes/${idPresup}`;
+    
+    const operation: VentoFileOperation = {
+      command: 'list',
+      arguments: {
+        path: targetPath
+      }
+    };
 
-  const [token] = await db
-    .select()
-    .from(integrationTokens)
-    .where(and(
-      eq(integrationTokens.userId, userId),
-      eq(integrationTokens.provider, 'INVENTO')
-    ))
-    .limit(1);
+    const config = await getInventoConfig(officeId);
+    const token = await getAuthToken(config);
 
-  return !!token;
-}
-
-export async function saveInventoApiKey(userId: number, apiKey: string): Promise<void> {
-  const [existing] = await db
-    .select()
-    .from(integrationTokens)
-    .where(and(
-      eq(integrationTokens.userId, userId),
-      eq(integrationTokens.provider, 'INVENTO')
-    ))
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(integrationTokens)
-      .set({
-        accessToken: apiKey,
-        updatedAt: new Date()
-      })
-      .where(eq(integrationTokens.id, existing.id));
-  } else {
-    await db.insert(integrationTokens).values({
-      userId,
-      provider: 'INVENTO',
-      accessToken: apiKey
+    const response = await fetch(`${config.apiUrl}/api/FileManager/file-manager-file-system-scripts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(operation)
     });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const result = await response.json();
+    return result.files || [];
+  } catch (error) {
+    console.error('Error listando archivos:', error);
+    return [];
   }
 }
+
+export async function createExpedienteFolder(
+  idPresup: number,
+  folderName: string,
+  officeId?: number
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const operation: VentoFileOperation = {
+      command: 'create',
+      arguments: {
+        path: `expedientes/${idPresup}`,
+        name: folderName
+      }
+    };
+
+    const config = await getInventoConfig(officeId);
+    const token = await getAuthToken(config);
+
+    const response = await fetch(`${config.apiUrl}/api/FileManager/file-manager-file-system-scripts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(operation)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Error creando carpeta: ${errorText}`);
+    }
+
+    return { success: true, message: `Carpeta ${folderName} creada` };
+  } catch (error) {
+    console.error('Error creando carpeta:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'Error desconocido' 
+    };
+  }
+}
+
+export async function searchTerceros(
+  tipo: string,
+  officeId?: number
+): Promise<VentoTercero[]> {
+  try {
+    const result = await makeVentoRequest<VentoTercero[]>(
+      `/api/Tercero/${tipo}`,
+      { method: 'GET' },
+      officeId
+    );
+    return Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.error('Error buscando terceros:', error);
+    return [];
+  }
+}
+
+export async function getTercero(
+  tipo: string,
+  idTercero: number,
+  officeId?: number
+): Promise<VentoTercero | null> {
+  try {
+    const result = await makeVentoRequest<VentoTercero>(
+      `/api/Tercero/ver/${tipo}/${idTercero}`,
+      { method: 'GET' },
+      officeId
+    );
+    return result;
+  } catch (error) {
+    console.error('Error obteniendo tercero:', error);
+    return null;
+  }
+}
+
+export async function reabrirExpediente(
+  idExpediente: number,
+  officeId?: number
+): Promise<{ success: boolean; message: string }> {
+  try {
+    await makeVentoRequest<any>(
+      `/api/Expediente/reabrir/${idExpediente}`,
+      { method: 'POST' },
+      officeId
+    );
+    return { success: true, message: 'Expediente reabierto' };
+  } catch (error) {
+    console.error('Error reabriendo expediente:', error);
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : 'Error desconocido' 
+    };
+  }
+}
+
+export async function getMaestro(
+  idMaestro: number,
+  idPadre?: number,
+  officeId?: number
+): Promise<any[]> {
+  try {
+    let url = `/api/Maestro/${idMaestro}`;
+    if (idPadre !== undefined) {
+      url += `?idPadre=${idPadre}`;
+    }
+    const result = await makeVentoRequest<any[]>(url, { method: 'GET' }, officeId);
+    return Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.error('Error obteniendo maestro:', error);
+    return [];
+  }
+}
+
+export async function getPresupuestoMaestro(officeId?: number): Promise<any> {
+  try {
+    return await makeVentoRequest<any>(
+      '/api/Presupuesto/getMaestro',
+      { method: 'GET' },
+      officeId
+    );
+  } catch (error) {
+    console.error('Error obteniendo maestro de presupuestos:', error);
+    return null;
+  }
+}
+
+export async function uploadDocumentsToCase(
+  caseId: string | number,
+  documents: Array<{
+    originalPath: string;
+    renamedName: string;
+    folder?: string;
+  }>,
+  officeId?: number
+): Promise<{
+  success: boolean;
+  uploaded: string[];
+  failed: string[];
+  errors: string[];
+}> {
+  const idPresup = typeof caseId === 'string' ? parseInt(caseId, 10) : caseId;
+  const uploaded: string[] = [];
+  const failed: string[] = [];
+  const errors: string[] = [];
+
+  for (const doc of documents) {
+    try {
+      if (!fs.existsSync(doc.originalPath)) {
+        failed.push(doc.renamedName);
+        errors.push(`Archivo no encontrado: ${doc.originalPath}`);
+        continue;
+      }
+
+      const result = await uploadFileToExpediente(
+        idPresup,
+        doc.originalPath,
+        doc.renamedName,
+        doc.folder || 'NOTIFICACIONES',
+        officeId
+      );
+
+      if (result.success) {
+        uploaded.push(doc.renamedName);
+      } else {
+        failed.push(doc.renamedName);
+        errors.push(result.message);
+      }
+    } catch (error) {
+      failed.push(doc.renamedName);
+      errors.push(error instanceof Error ? error.message : 'Error desconocido');
+    }
+  }
+
+  return {
+    success: failed.length === 0,
+    uploaded,
+    failed,
+    errors
+  };
+}
+
+export async function findExpedienteByProcedimiento(
+  court: string,
+  procedureNumber: string,
+  officeId?: number
+): Promise<VentoExpediente | null> {
+  const searchQuery = `${procedureNumber} ${court}`.trim();
+  const results = await searchExpedientes(searchQuery, officeId);
+  
+  if (results.length === 0) {
+    const simpleSearch = await searchExpedientes(procedureNumber, officeId);
+    if (simpleSearch.length > 0) {
+      return simpleSearch[0];
+    }
+    return null;
+  }
+  
+  const exactMatch = results.find(exp => 
+    exp.numProcedimiento?.toLowerCase() === procedureNumber.toLowerCase()
+  );
+  
+  return exactMatch || results[0];
+}
+
+export async function hasInventoIntegration(officeId?: number): Promise<boolean> {
+  try {
+    const config = await getInventoConfig(officeId);
+    return !!(config.token || (config.username && config.password));
+  } catch {
+    return false;
+  }
+}
+
+export async function testInventoConnection(officeId?: number): Promise<{
+  connected: boolean;
+  message: string;
+}> {
+  try {
+    const config = await getInventoConfig(officeId);
+    await getAuthToken(config);
+    
+    const maestro = await getPresupuestoMaestro(officeId);
+    
+    return {
+      connected: true,
+      message: 'Conexión exitosa con Vento API'
+    };
+  } catch (error) {
+    return {
+      connected: false,
+      message: error instanceof Error ? error.message : 'Error de conexión'
+    };
+  }
+}
+
+export type { VentoExpediente, VentoTercero };

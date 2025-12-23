@@ -99,7 +99,10 @@ Vento LexOps es una plataforma de automatización legal para la gestión de noti
 ### Integraciones
 - `GET /api/integrations/microsoft/auth-url` - URL OAuth Microsoft
 - `GET /api/integrations/microsoft/calendar` - Eventos calendario
-- `GET /api/integrations/invento/cases` - Buscar expedientes
+- `GET /api/integrations/invento/status` - Estado conexión Invento
+- `POST /api/integrations/invento/test` - Probar conexión Invento
+- `GET /api/integrations/invento/expedientes?q=texto` - Buscar expedientes en Vento API
+- `GET /api/integrations/invento/expediente/:id` - Obtener expediente por ID
 
 ## Roles de Usuario
 - **ADMIN**: Acceso completo, gestión de usuarios, logs de auditoría
@@ -125,6 +128,14 @@ npm run db:push  # Sincronizar schema DB
 ```
 
 ## Recent Changes
+- 2024-12-23: Integración API Vento (Invento) completa
+  - Cliente invento-api.ts reescrito para usar API real de Vento (ventoapi.vento.es)
+  - Endpoints: /api/Presupuesto/Buscar, /api/FileManager/file-manager-file-system-scripts
+  - executeAction() en execution-plan-service.ts conectado a cliente real
+  - UPLOAD_INVENTO ejecuta subida real de documentos a expedientes
+  - Configuración de Invento por oficina (offices.inventoApiUrl, offices.inventoSecretKeyName)
+  - Nuevos endpoints: GET /api/integrations/invento/expedientes, POST /api/integrations/invento/test
+
 - 2024-12-20: Refactorización arquitectónica mayor
   - Sistema de invitación/aprobación para registro de usuarios (inviteCode o joinCode)
   - IA configurada a nivel de oficina (aiProvider, aiSecretKeyName en tabla offices)

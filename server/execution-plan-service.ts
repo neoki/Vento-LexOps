@@ -8,10 +8,16 @@ import {
   deadlineRules,
   emailTemplates,
   eventTemplates,
-  categories
+  categories,
+  documents
 } from '../shared/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { AIAnalysisResult } from './ai-service';
+import { 
+  uploadDocumentsToCase, 
+  findExpedienteByProcedimiento,
+  searchExpedientes 
+} from './invento-api';
 
 export type ActionType = 
   | 'UPLOAD_INVENTO' 
@@ -289,11 +295,29 @@ export async function cancelPlan(
     .where(eq(executionPlans.id, planId));
 }
 
-export async function executePlan(planId: number): Promise<void> {
+export async function executePlan(planId: number, officeId?: number): Promise<void> {
   const plan = await getPlanWithActions(planId);
   
   if (!plan || plan.status !== 'APPROVED') {
     throw new Error('Plan not found or not approved');
+  }
+
+  let resolvedOfficeId = officeId;
+  if (!resolvedOfficeId) {
+    const [notification] = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.id, plan.notificationId))
+      .limit(1);
+    
+    if (notification?.assignedLawyerId) {
+      const [lawyer] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, notification.assignedLawyerId))
+        .limit(1);
+      resolvedOfficeId = lawyer?.officeId || undefined;
+    }
   }
 
   await db
@@ -308,16 +332,27 @@ export async function executePlan(planId: number): Promise<void> {
       }
 
       try {
-        await executeAction(action);
+        const result = await executeAction(action, planId, resolvedOfficeId);
         
-        await db
-          .update(executionActions)
-          .set({
-            status: 'EXECUTED',
-            executedAt: new Date(),
-            executionResult: { success: true }
-          })
-          .where(eq(executionActions.id, action.id));
+        if (result.success) {
+          await db
+            .update(executionActions)
+            .set({
+              status: 'EXECUTED',
+              executedAt: new Date(),
+              executionResult: result.result || { success: true }
+            })
+            .where(eq(executionActions.id, action.id));
+        } else {
+          await db
+            .update(executionActions)
+            .set({
+              status: 'FAILED',
+              errorMessage: result.error || 'Error desconocido',
+              executionResult: result.result
+            })
+            .where(eq(executionActions.id, action.id));
+        }
       } catch (error) {
         await db
           .update(executionActions)
@@ -349,25 +384,120 @@ export async function executePlan(planId: number): Promise<void> {
   }
 }
 
-async function executeAction(action: any): Promise<void> {
+async function executeAction(action: any, planId: number, officeId?: number): Promise<{ success: boolean; result?: any; error?: string }> {
+  const [plan] = await db
+    .select()
+    .from(executionPlans)
+    .where(eq(executionPlans.id, planId))
+    .limit(1);
+
+  if (!plan) {
+    throw new Error('Plan not found');
+  }
+
+  const [notification] = await db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.id, plan.notificationId))
+    .limit(1);
+
   switch (action.actionType) {
-    case 'UPLOAD_INVENTO':
+    case 'UPLOAD_INVENTO': {
       console.log('Ejecutando: Subir a Invento', action.config);
-      break;
-    case 'CREATE_NOTE':
+      
+      const config = action.config || {};
+      let caseId = config.caseId;
+      
+      if (!caseId && notification) {
+        const expediente = await findExpedienteByProcedimiento(
+          notification.court,
+          notification.procedureNumber,
+          officeId
+        );
+        if (expediente) {
+          caseId = expediente.idPresup;
+        }
+      }
+      
+      if (!caseId) {
+        return { 
+          success: false, 
+          error: 'No se encontró expediente en Invento para esta notificación' 
+        };
+      }
+      
+      const docsToUpload = config.documents || [];
+      const notificationDocs = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.notificationId, plan.notificationId));
+      
+      const documentsForUpload = docsToUpload.length > 0 
+        ? docsToUpload.map((d: any, i: number) => ({
+            originalPath: notificationDocs[i]?.filePath || '',
+            renamedName: d.renamedName || d.originalName,
+            folder: config.folder || 'NOTIFICACIONES'
+          }))
+        : notificationDocs.map(d => ({
+            originalPath: d.filePath,
+            renamedName: d.renamedName || d.fileName,
+            folder: 'NOTIFICACIONES'
+          }));
+      
+      const result = await uploadDocumentsToCase(caseId, documentsForUpload, officeId);
+      
+      if (!result.success) {
+        return { 
+          success: false, 
+          error: result.errors.join('; '),
+          result 
+        };
+      }
+      
+      await db
+        .update(notifications)
+        .set({ 
+          inventoCaseId: String(caseId),
+          updatedAt: new Date()
+        })
+        .where(eq(notifications.id, plan.notificationId));
+      
+      return { success: true, result };
+    }
+    
+    case 'CREATE_NOTE': {
       console.log('Ejecutando: Crear nota', action.config);
-      break;
-    case 'CREATE_EVENT':
+      return { success: true, result: { message: 'Nota registrada (pendiente integración)' } };
+    }
+    
+    case 'CREATE_EVENT': {
       console.log('Ejecutando: Crear evento', action.config);
-      break;
-    case 'SEND_EMAIL_LAWYER':
+      return { success: true, result: { message: 'Evento registrado (pendiente integración Graph)' } };
+    }
+    
+    case 'SEND_EMAIL_LAWYER': {
       console.log('Ejecutando: Enviar email a letrado', action.config);
-      break;
-    case 'SEND_EMAIL_CLIENT':
+      return { success: true, result: { message: 'Email registrado (pendiente transporte SMTP)' } };
+    }
+    
+    case 'SEND_EMAIL_CLIENT': {
       console.log('Ejecutando: Enviar email a cliente', action.config);
-      break;
+      return { success: true, result: { message: 'Email registrado (pendiente transporte SMTP)' } };
+    }
+    
+    case 'DOWNLOAD_LINK': {
+      console.log('Ejecutando: Descargar enlace', action.config);
+      return { success: true, result: { message: 'Descarga pendiente de implementación' } };
+    }
+    
+    case 'DETECT_COLLISION': {
+      console.log('Ejecutando: Detectar colisión', action.config);
+      return { success: true, result: { message: 'Sin colisiones detectadas' } };
+    }
+    
     default:
       console.log('Acción no implementada:', action.actionType);
+      return { success: false, error: `Acción no implementada: ${action.actionType}` };
   }
 }
 

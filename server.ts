@@ -566,41 +566,53 @@ app.post('/api/integrations/microsoft/calendar', requireAuth, async (req, res) =
   }
 });
 
-app.get('/api/integrations/invento/status', requireAuth, async (req, res) => {
+app.get('/api/integrations/invento/status', requireAuth, async (req: any, res) => {
   try {
-    const hasIntegration = await inventoApi.hasInventoIntegration(req.user!.id);
+    const officeId = req.user?.officeId;
+    const hasIntegration = await inventoApi.hasInventoIntegration(officeId);
     res.json({ connected: hasIntegration });
   } catch (error) {
     res.json({ connected: false });
   }
 });
 
-app.post('/api/integrations/invento/api-key', requireAuth, async (req, res) => {
+app.post('/api/integrations/invento/test', requireAuth, async (req: any, res) => {
   try {
-    const { apiKey } = req.body;
-    await inventoApi.saveInventoApiKey(req.user!.id, apiKey);
-    res.json({ success: true });
+    const officeId = req.user?.officeId;
+    const result = await inventoApi.testInventoConnection(officeId);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ connected: false, message: error.message });
+  }
+});
+
+app.get('/api/integrations/invento/expedientes', requireAuth, async (req: any, res) => {
+  try {
+    const { q, texto } = req.query;
+    const searchQuery = (q || texto || '') as string;
+    const officeId = req.user?.officeId;
+    const expedientes = await inventoApi.searchExpedientes(searchQuery, officeId);
+    res.json(expedientes);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/integrations/invento/cases', requireAuth, async (req, res) => {
+app.get('/api/integrations/invento/expediente/:id', requireAuth, async (req: any, res) => {
   try {
-    const { reference, client, court, procedureNumber } = req.query;
-    const cases = await inventoApi.searchCases(req.user!.id, {
-      reference: reference as string,
-      client: client as string,
-      court: court as string,
-      procedureNumber: procedureNumber as string
-    });
-    res.json(cases);
+    const idPresup = parseInt(req.params.id);
+    const officeId = req.user?.officeId;
+    const expediente = await inventoApi.getExpediente(idPresup, officeId);
+    if (!expediente) {
+      return res.status(404).json({ error: 'Expediente no encontrado' });
+    }
+    res.json(expediente);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/notifications/:id/sync-invento', requireAuth, async (req, res) => {
+app.post('/api/notifications/:id/sync-invento', requireAuth, async (req: any, res) => {
   try {
     const [notification] = await db
       .select()
@@ -612,12 +624,21 @@ app.post('/api/notifications/:id/sync-invento', requireAuth, async (req, res) =>
       return res.status(404).json({ error: 'Notificación no encontrada' });
     }
 
-    const result = await inventoApi.syncNotificationWithInvento(req.user!.id, notification);
+    const officeId = req.user?.officeId;
+    const expediente = await inventoApi.findExpedienteByProcedimiento(
+      notification.court,
+      notification.procedureNumber,
+      officeId
+    );
+
+    if (!expediente) {
+      return res.status(404).json({ error: 'No se encontró expediente en Invento' });
+    }
 
     await db
       .update(notifications)
       .set({
-        inventoCaseId: result.caseId,
+        inventoCaseId: String(expediente.idPresup),
         status: 'EXECUTED',
         updatedAt: new Date()
       })
@@ -628,11 +649,11 @@ app.post('/api/notifications/:id/sync-invento', requireAuth, async (req, res) =>
       'SYNC_INVENTO',
       'notification',
       req.params.id,
-      { caseId: result.caseId, isNewCase: result.isNewCase },
+      { caseId: expediente.idPresup, referencia: expediente.referencia },
       req.ip
     );
 
-    res.json({ success: true, caseId: result.caseId, isNewCase: result.isNewCase });
+    res.json({ success: true, caseId: expediente.idPresup, expediente });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
