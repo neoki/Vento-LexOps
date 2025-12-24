@@ -160,6 +160,7 @@ export const documents = pgTable("documents", {
   extractedText: text("extracted_text"),
   requiresOcr: boolean("requires_ocr").default(false),
   sequenceNumber: integer("sequence_number"),
+  groupKey: text("group_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

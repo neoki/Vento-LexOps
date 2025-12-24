@@ -28,14 +28,24 @@ const Review: React.FC = () => {
   const [plans, setPlans] = useState<ExecutionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPlan, setExpandedPlan] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('pending');
 
   useEffect(() => {
     fetchPlans();
-  }, []);
+  }, [statusFilter]);
 
   const fetchPlans = async () => {
     try {
-      const response = await fetch('/api/execution-plans?status=PROPOSED', { credentials: 'include' });
+      // Si filtro es "pending", buscamos PROPOSED y APPROVED (listos para revisar/ejecutar)
+      // Si es "all", traemos todos los planes
+      let url = '/api/execution-plans';
+      if (statusFilter === 'pending') {
+        url += '?status=PROPOSED';
+      } else if (statusFilter === 'approved') {
+        url += '?status=APPROVED';
+      }
+      
+      const response = await fetch(url, { credentials: 'include' });
       const data = await response.json();
       
       const plansWithActions = await Promise.all(
@@ -142,9 +152,22 @@ const Review: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Revisión de planes</h1>
-        <p className="text-gray-500 mt-1">Revisa y aprueba los planes de ejecución propuestos</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Revisión de planes</h1>
+          <p className="text-gray-500 mt-1">Revisa y aprueba los planes de ejecución propuestos</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select 
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="pending">Pendientes de revisión</option>
+            <option value="approved">Aprobados (listo para ejecutar)</option>
+            <option value="all">Todos los planes</option>
+          </select>
+        </div>
       </div>
 
       {plans.length === 0 ? (

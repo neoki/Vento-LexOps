@@ -3,9 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import { db } from './db';
 import { lexnetPackages, documents, users, notifications } from '../shared/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import * as storage from './storage-service';
 import { analyzeDocument, AIAnalysisResult } from './ai-service';
+import { generateExecutionPlan, saveExecutionPlan } from './execution-plan-service';
 
 export interface ExtractedDocument {
   fileName: string;
@@ -18,6 +19,23 @@ export interface ExtractedDocument {
   isReceipt: boolean;
   extractedText?: string;
   requiresOcr: boolean;
+  groupKey?: string;
+}
+
+function extractGroupKey(fileName: string): string {
+  const baseName = path.basename(fileName);
+  const parts = baseName.split('_');
+  if (parts.length >= 4) {
+    const lastPart = parts[parts.length - 1];
+    const secondLastPart = parts[parts.length - 2];
+    if (lastPart.match(/^\d{3}/) || lastPart.includes('DATOS ESTRUCTURADOS')) {
+      parts.pop();
+      if (secondLastPart.match(/^\d+$/)) {
+        parts.pop();
+      }
+    }
+  }
+  return parts.join('_').replace(/\.\w+$/, '');
 }
 
 export interface PackageAnalysisResult {
@@ -125,7 +143,70 @@ export async function processPackage(
           hasReceipt: pkg.hasReceipt,
         }).returning();
         
-        console.log(`[Processor] Created notification ${newNotification.id} from XML for ${xml.court} (${xml.location}), docType: ${detectedDocType}`);
+        console.log(`[Processor] Created notification ${newNotification.id} from XML for ${xml.court} (${xml.location}), docType: ${detectedDocType}, groupKey: ${xml.groupKey}`);
+        
+        // Asociar documentos del paquete a esta notificación usando groupKey
+        if (xml.groupKey) {
+          await db
+            .update(documents)
+            .set({ notificationId: newNotification.id })
+            .where(and(
+              eq(documents.packageId, packageId),
+              eq(documents.groupKey, xml.groupKey)
+            ));
+          console.log(`[Processor] Linked documents with groupKey ${xml.groupKey} to notification ${newNotification.id}`);
+        } else {
+          // Fallback: asociar todos los documentos si no hay groupKey
+          await db
+            .update(documents)
+            .set({ notificationId: newNotification.id })
+            .where(eq(documents.packageId, packageId));
+          console.log(`[Processor] Linked all documents from package ${packageId} to notification ${newNotification.id}`);
+        }
+        
+        // Generar plan de ejecución básico para notificaciones XML
+        try {
+          // Filtrar documentos por groupKey para el plan
+          const relevantDocs = xml.groupKey 
+            ? extractedDocs.filter(d => d.groupKey === xml.groupKey)
+            : extractedDocs;
+          
+          const docsForPlan = relevantDocs.map(d => ({
+            fileName: d.fileName,
+            originalName: d.originalName,
+            filePath: d.filePath
+          }));
+          
+          // Crear análisis básico a partir de datos XML
+          const basicAnalysis: AIAnalysisResult = {
+            court: xml.court || 'Sin determinar',
+            procedureNumber: xml.procedureNumber || 'Sin número',
+            procedureType: xml.procedureType,
+            actType: xml.actType,
+            docType: detectedDocType,
+            priority: 'MEDIUM',
+            confidence: 95,
+            reasoning: ['Datos extraídos del XML estructurado de LexNET'],
+            evidences: [`NIG: ${xml.nig}`],
+            extractedDeadlines: []
+          };
+          
+          const executionPlan = await generateExecutionPlan(
+            newNotification.id,
+            basicAnalysis,
+            docsForPlan
+          );
+          
+          const planId = await saveExecutionPlan(executionPlan, 'AI');
+          console.log(`[Processor] Created execution plan ${planId} for XML notification ${newNotification.id}`);
+          
+          await db
+            .update(notifications)
+            .set({ status: 'PLAN_DRAFTED', updatedAt: new Date() })
+            .where(eq(notifications.id, newNotification.id));
+        } catch (planError) {
+          console.error('[Processor] Error creating execution plan for XML notification:', planError);
+        }
       }
     } else {
       const primaryDoc = extractedDocs.find(d => d.isPrimary);
@@ -177,6 +258,40 @@ export async function processPackage(
             }).returning();
             
             console.log(`[Processor] Created notification ${newNotification.id} for package ${packageId}`);
+            
+            // Asociar documentos del paquete a esta notificación
+            await db
+              .update(documents)
+              .set({ notificationId: newNotification.id })
+              .where(eq(documents.packageId, packageId));
+            
+            console.log(`[Processor] Linked documents to notification ${newNotification.id}`);
+            
+            // Generar plan de ejecución automáticamente
+            try {
+              const docsForPlan = extractedDocs.map(d => ({
+                fileName: d.fileName,
+                originalName: d.originalName,
+                filePath: d.filePath
+              }));
+              
+              const executionPlan = await generateExecutionPlan(
+                newNotification.id,
+                aiAnalysis,
+                docsForPlan
+              );
+              
+              const planId = await saveExecutionPlan(executionPlan, 'AI');
+              console.log(`[Processor] Created execution plan ${planId} for notification ${newNotification.id}`);
+              
+              // Actualizar estado de la notificación a PLAN_DRAFTED
+              await db
+                .update(notifications)
+                .set({ status: 'PLAN_DRAFTED', updatedAt: new Date() })
+                .where(eq(notifications.id, newNotification.id));
+            } catch (planError) {
+              console.error('[Processor] Error creating execution plan:', planError);
+            }
           }
         } catch (error) {
           console.error('[Processor] AI analysis error:', error);
@@ -237,6 +352,7 @@ interface XmlExtractedData {
   nig?: string;
   jurisdiction?: string;
   codigoSGP?: string;
+  groupKey?: string;
 }
 
 const PROVINCE_MAP: Record<string, string> = {
@@ -385,13 +501,16 @@ async function extractZipContents(
       }
     }
     
+    const groupKey = extractGroupKey(originalName);
+    
     if (isXml && fileName.includes('DATOS ESTRUCTURADOS')) {
       try {
         const xmlContent = buffer.toString('utf-8');
         const xmlData = parseXmlData(xmlContent);
+        xmlData.groupKey = groupKey;
         if (xmlData.court || xmlData.procedureNumber) {
           xmlDataList.push(xmlData);
-          console.log(`[Processor] Extracted XML data:`, xmlData);
+          console.log(`[Processor] Extracted XML data with groupKey ${groupKey}:`, xmlData);
         }
       } catch (error) {
         console.error('[Processor] Error parsing XML:', error);
@@ -413,13 +532,15 @@ async function extractZipContents(
       isPrimary: false,
       isReceipt,
       extractedText,
-      requiresOcr
+      requiresOcr,
+      groupKey
     };
 
     extractedDocs.push(doc);
 
     await db.insert(documents).values({
       packageId,
+      groupKey,
       fileName,
       originalName,
       filePath,
