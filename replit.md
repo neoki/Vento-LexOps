@@ -128,6 +128,32 @@ npm run db:push  # Sincronizar schema DB
 ```
 
 ## Recent Changes
+- 2024-12-29: Implementación completa del procedimiento LexNET automatizado
+  - **Motor de plazos procesales** (server/deadline-calculator.ts):
+    - Cálculo de días hábiles excluyendo fines de semana, festivos y agosto
+    - Día de gracia hasta las 15:00:59h del siguiente día hábil (LEC art. 135.1)
+    - Integración con tabla holidays para festivos por oficina
+    - Alertas automáticas 24-48h antes de vencimientos
+  - **Sistema de alertas** (server/alert-service.ts):
+    - Generación de alertas pendientes basada en plazos próximos
+    - Templates HTML para emails de alerta con niveles de urgencia
+    - Integración preparada para Microsoft Graph
+    - Endpoints: GET /api/alerts/pending, GET /api/alerts/summary
+  - **Protocolo ACCEDA** (server/acceda-service.ts):
+    - Detección automática de documentos >10 MB
+    - Instrucciones paso a paso para presentación vía ACCEDA-Justicia
+    - Generación de informes texto y JSON
+    - Endpoints: GET /api/acceda/analyze/:packageId, GET /api/acceda/pending
+  - **Validación documental** (server/document-validation.ts):
+    - Verificación PDF/A y detección de documentos sin OCR
+    - Detección de duplicados por hash
+    - Informes de validación por paquete
+    - Endpoints: GET /api/validation/package/:packageId, GET /api/validation/duplicates
+  - **Calendar View mejorado** (screens/CalendarView.tsx):
+    - Muestra día de gracia en tooltip
+    - Indicadores de urgencia para plazos próximos
+    - Contador de días hábiles restantes
+
 - 2024-12-23: Integración API Vento (Invento) completa
   - Cliente invento-api.ts reescrito para usar API real de Vento (ventoapi.vento.es)
   - Endpoints: /api/Presupuesto/Buscar, /api/FileManager/file-manager-file-system-scripts

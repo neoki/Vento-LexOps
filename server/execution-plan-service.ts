@@ -585,30 +585,18 @@ async function generateCalendarEvents(
 async function calculateDeadlineDate(
   startDate: Date,
   days: number,
-  businessDaysOnly: boolean
+  businessDaysOnly: boolean,
+  officeId: number | null = null
 ): Promise<Date> {
-  const result = new Date(startDate);
-  result.setDate(result.getDate() + 1);
-
-  if (!businessDaysOnly) {
-    result.setDate(result.getDate() + days);
-    return result;
+  if (businessDaysOnly) {
+    const { calculateBusinessDeadline } = await import('./deadline-calculator');
+    const info = await calculateBusinessDeadline(startDate, days, officeId);
+    return info.deadlineDate;
   }
-
-  let countedDays = 0;
-  while (countedDays < days) {
-    result.setDate(result.getDate() + 1);
-    
-    const dayOfWeek = result.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
-    
-    const month = result.getMonth();
-    if (month === 7) continue;
-    
-    countedDays++;
-  }
-
-  return result;
+  
+  const { calculateNaturalDeadline } = await import('./deadline-calculator');
+  const info = calculateNaturalDeadline(startDate, days);
+  return info.deadlineDate;
 }
 
 function generateDocumentName(

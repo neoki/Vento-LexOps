@@ -4,8 +4,12 @@ import { ChevronLeft, ChevronRight, AlertCircle, Scale, RefreshCcw } from 'lucid
 interface Deadline {
     id: string;
     date: string;
+    gracePeriodEnd: string;
+    gracePeriodFormatted: string;
     description: string;
     isFatal: boolean;
+    isUrgent: boolean;
+    businessDaysRemaining: number;
     notificationId: number;
     court: string;
     procedureNumber: string;
@@ -103,17 +107,33 @@ const CalendarView: React.FC = () => {
                                 
                                 <div className="flex-1 flex flex-col gap-1 overflow-y-auto custom-scrollbar">
                                     {deadlines.map(d => (
-                                        <div key={d.id} className={`text-[10px] p-1.5 rounded border mb-0.5 cursor-pointer hover:opacity-80 shadow-sm ${
-                                            d.isFatal 
+                                        <div key={d.id} 
+                                            className={`text-[10px] p-1.5 rounded border mb-0.5 cursor-pointer hover:opacity-80 shadow-sm ${
+                                            d.isUrgent 
+                                            ? 'bg-orange-50 border-orange-300 text-orange-900 ring-2 ring-orange-400' 
+                                            : d.isFatal 
                                             ? 'bg-red-50 border-red-200 text-red-800' 
                                             : 'bg-indigo-50 border-indigo-200 text-indigo-800'
-                                        }`}>
+                                        }`}
+                                            title={`Gracia: ${d.gracePeriodFormatted || 'N/A'}\nDías hábiles restantes: ${d.businessDaysRemaining}`}
+                                        >
                                             <div className="flex items-center gap-1 font-bold mb-0.5">
+                                                {d.isUrgent && <span className="text-orange-600">!</span>}
                                                 {d.isFatal ? <AlertCircle size={10} /> : <Scale size={10} />}
-                                                {d.date.split('-')[2]}/{d.date.split('-')[1]}
+                                                <span>{d.date.split('-')[2]}/{d.date.split('-')[1]}</span>
+                                                {d.businessDaysRemaining <= 3 && d.businessDaysRemaining > 0 && (
+                                                    <span className="ml-auto text-[8px] bg-orange-200 text-orange-800 px-1 rounded">
+                                                        {d.businessDaysRemaining}d
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="truncate font-medium">{d.description}</div>
                                             <div className="opacity-75 truncate">{d.procedureNumber}</div>
+                                            {d.gracePeriodFormatted && (
+                                                <div className="text-[8px] opacity-60 mt-0.5 truncate">
+                                                    Gracia: {d.gracePeriodFormatted.split(' ').slice(0, 3).join(' ')}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

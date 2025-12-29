@@ -126,14 +126,16 @@ app.get('/api/deadlines', async (req, res) => {
         id: notifications.id,
         court: notifications.court,
         procedureNumber: notifications.procedureNumber,
-        extractedDeadlines: notifications.extractedDeadlines
+        extractedDeadlines: notifications.extractedDeadlines,
+        receivedDate: notifications.receivedDate
       })
       .from(notifications)
       .where(sql`${notifications.extractedDeadlines} IS NOT NULL`);
     
     interface DeadlineItem {
       type?: string;
-      date: string;
+      date?: string;
+      days?: number;
       description: string;
       isFatal?: boolean;
     }
@@ -141,32 +143,75 @@ app.get('/api/deadlines', async (req, res) => {
     const deadlines: Array<{
       id: string;
       date: string;
+      gracePeriodEnd: string;
+      gracePeriodFormatted: string;
       description: string;
       isFatal: boolean;
+      isUrgent: boolean;
+      businessDaysRemaining: number;
       notificationId: number;
       court: string;
       procedureNumber: string;
     }> = [];
     
-    allNotifications.forEach(n => {
+    const today = new Date();
+    
+    for (const n of allNotifications) {
       const extracted = n.extractedDeadlines as DeadlineItem[] | null;
       if (extracted && Array.isArray(extracted)) {
-        extracted.forEach((d, idx) => {
+        for (let idx = 0; idx < extracted.length; idx++) {
+          const d = extracted[idx];
+          let deadlineDate: Date;
+          let gracePeriodEnd: Date;
+          
           if (d.date) {
-            const dateOnly = d.date.split('T')[0];
-            deadlines.push({
-              id: `${n.id}-${idx}`,
-              date: dateOnly,
-              description: d.description || d.type || 'Plazo',
-              isFatal: d.isFatal || d.type === 'FATAL' || false,
-              notificationId: n.id,
-              court: n.court || '',
-              procedureNumber: n.procedureNumber || ''
-            });
+            deadlineDate = new Date(d.date);
+          } else if (d.days && n.receivedDate) {
+            const startDate = new Date(n.receivedDate);
+            if (d.type === 'HABIL') {
+              const { calculateBusinessDeadline } = await import('./server/deadline-calculator');
+              const info = await calculateBusinessDeadline(startDate, d.days, null);
+              deadlineDate = info.deadlineDate;
+              gracePeriodEnd = info.gracePeriodEnd;
+            } else {
+              deadlineDate = new Date(startDate);
+              deadlineDate.setDate(deadlineDate.getDate() + d.days + 1);
+            }
+          } else {
+            continue;
           }
-        });
+          
+          if (!gracePeriodEnd) {
+            gracePeriodEnd = new Date(deadlineDate);
+            gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 1);
+            gracePeriodEnd.setHours(15, 0, 59, 0);
+          }
+          
+          const msPerDay = 24 * 60 * 60 * 1000;
+          const daysRemaining = Math.ceil((deadlineDate.getTime() - today.getTime()) / msPerDay);
+          
+          deadlines.push({
+            id: `${n.id}-${idx}`,
+            date: deadlineDate.toISOString().split('T')[0],
+            gracePeriodEnd: gracePeriodEnd.toISOString(),
+            gracePeriodFormatted: gracePeriodEnd.toLocaleDateString('es-ES', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long'
+            }) + ' hasta las 15:00:59h',
+            description: d.description || d.type || 'Plazo',
+            isFatal: d.isFatal || d.type === 'FATAL' || false,
+            isUrgent: daysRemaining <= 3,
+            businessDaysRemaining: daysRemaining,
+            notificationId: n.id,
+            court: n.court || '',
+            procedureNumber: n.procedureNumber || ''
+          });
+        }
       }
-    });
+    }
+    
+    deadlines.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
     res.json(deadlines);
   } catch (error) {
@@ -1005,6 +1050,172 @@ app.post('/api/execution-plans/:id/execute', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error executing plan:', error);
     res.status(500).json({ error: 'Error ejecutando plan' });
+  }
+});
+
+app.get('/api/validation/package/:packageId', requireAuth, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.packageId);
+    const { validatePackage, generateValidationReport } = await import('./server/document-validation');
+    const result = await validatePackage(packageId);
+    const report = generateValidationReport(result);
+    res.json({ ...result, textReport: report });
+  } catch (error) {
+    console.error('Error validating package:', error);
+    res.status(500).json({ error: 'Error validando paquete' });
+  }
+});
+
+app.get('/api/validation/document/:documentId', requireAuth, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+    const { validateDocument } = await import('./server/document-validation');
+    const result = await validateDocument(documentId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error validating document:', error);
+    res.status(500).json({ error: 'Error validando documento' });
+  }
+});
+
+app.get('/api/validation/duplicates', requireAuth, async (req, res) => {
+  try {
+    const { findAllDuplicates } = await import('./server/document-validation');
+    const duplicates = await findAllDuplicates();
+    res.json(duplicates);
+  } catch (error) {
+    console.error('Error finding duplicates:', error);
+    res.status(500).json({ error: 'Error buscando duplicados' });
+  }
+});
+
+app.get('/api/validation/ocr-needed', requireAuth, async (req, res) => {
+  try {
+    const { getDocumentsNeedingOcr } = await import('./server/document-validation');
+    const docs = await getDocumentsNeedingOcr();
+    res.json(docs);
+  } catch (error) {
+    console.error('Error getting documents needing OCR:', error);
+    res.status(500).json({ error: 'Error obteniendo documentos que necesitan OCR' });
+  }
+});
+
+app.get('/api/acceda/analyze/:packageId', requireAuth, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.packageId);
+    const { analyzeForAcceda, generateAccedaReport } = await import('./server/acceda-service');
+    const analysis = await analyzeForAcceda(packageId);
+    const report = generateAccedaReport(analysis);
+    res.json({ ...analysis, textReport: report });
+  } catch (error) {
+    console.error('Error analyzing for ACCEDA:', error);
+    res.status(500).json({ error: 'Error analizando para ACCEDA' });
+  }
+});
+
+app.get('/api/acceda/pending', requireAuth, async (req, res) => {
+  try {
+    const { getAccedaPendingDocuments } = await import('./server/acceda-service');
+    const pendingDocs = await getAccedaPendingDocuments();
+    res.json(pendingDocs);
+  } catch (error) {
+    console.error('Error getting ACCEDA pending documents:', error);
+    res.status(500).json({ error: 'Error obteniendo documentos pendientes de ACCEDA' });
+  }
+});
+
+app.get('/api/documents/:id/acceda-check', requireAuth, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const { checkDocumentForAcceda } = await import('./server/acceda-service');
+    const result = await checkDocumentForAcceda(documentId);
+    if (!result) {
+      return res.status(404).json({ error: 'Documento no encontrado' });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Error checking document for ACCEDA:', error);
+    res.status(500).json({ error: 'Error verificando documento para ACCEDA' });
+  }
+});
+
+app.get('/api/alerts/pending', requireAuth, async (req, res) => {
+  try {
+    const { generatePendingAlerts, getAlertsSummary } = await import('./server/alert-service');
+    const [alerts, summary] = await Promise.all([
+      generatePendingAlerts(),
+      getAlertsSummary()
+    ]);
+    res.json({ alerts, summary });
+  } catch (error) {
+    console.error('Error getting pending alerts:', error);
+    res.status(500).json({ error: 'Error obteniendo alertas pendientes' });
+  }
+});
+
+app.get('/api/alerts/summary', requireAuth, async (req, res) => {
+  try {
+    const { getAlertsSummary } = await import('./server/alert-service');
+    const summary = await getAlertsSummary();
+    res.json(summary);
+  } catch (error) {
+    console.error('Error getting alerts summary:', error);
+    res.status(500).json({ error: 'Error obteniendo resumen de alertas' });
+  }
+});
+
+app.get('/api/deadlines/upcoming', requireAuth, async (req, res) => {
+  try {
+    const daysAhead = parseInt(req.query.days as string) || 7;
+    const { getUpcomingDeadlines } = await import('./server/deadline-calculator');
+    const deadlines = await getUpcomingDeadlines(null, daysAhead);
+    res.json(deadlines);
+  } catch (error) {
+    console.error('Error getting upcoming deadlines:', error);
+    res.status(500).json({ error: 'Error obteniendo plazos próximos' });
+  }
+});
+
+app.get('/api/deadlines/urgent', requireAuth, async (req, res) => {
+  try {
+    const { getDeadlinesNeedingAlert } = await import('./server/deadline-calculator');
+    const urgentDeadlines = await getDeadlinesNeedingAlert();
+    res.json(urgentDeadlines);
+  } catch (error) {
+    console.error('Error getting urgent deadlines:', error);
+    res.status(500).json({ error: 'Error obteniendo plazos urgentes' });
+  }
+});
+
+app.post('/api/deadlines/:notificationId/calculate', requireAuth, async (req, res) => {
+  try {
+    const { days, isBusinessDays } = req.body;
+    const notificationId = parseInt(req.params.notificationId);
+    
+    const [notification] = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.id, notificationId))
+      .limit(1);
+    
+    if (!notification) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+    
+    const startDate = new Date(notification.receivedDate);
+    
+    if (isBusinessDays) {
+      const { calculateBusinessDeadline } = await import('./server/deadline-calculator');
+      const info = await calculateBusinessDeadline(startDate, days, null);
+      res.json(info);
+    } else {
+      const { calculateNaturalDeadline } = await import('./server/deadline-calculator');
+      const info = calculateNaturalDeadline(startDate, days);
+      res.json(info);
+    }
+  } catch (error) {
+    console.error('Error calculating deadline:', error);
+    res.status(500).json({ error: 'Error calculando plazo' });
   }
 });
 
