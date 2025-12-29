@@ -1,0 +1,41 @@
+# Rol
+Actúa como un Ingeniero de Software Senior experto en Python, RPA y Automatización con Selenium.
+
+# Objetivo
+Implementar el **Agente de Escritorio (RPA)** para el proyecto Vento LexOps, siguiendo estrictamente la arquitectura definida en el archivo [docs/rpa-agent-architecture.md](cci:7://file:///e:/Vento-LexOps/docs/rpa-agent-architecture.md:0:0-0:0).
+
+# Contexto del Proyecto
+- **Backend**: Ya existe un servidor en [server.ts](cci:7://file:///e:/Vento-LexOps/server.ts:0:0-0:0) (Express) escuchando en el puerto 3001.
+- **Endpoints**: El agente debe comunicarse con:
+  - `POST /api/agent/heartbeat`: Para enviar señal de vida y recibir comandos.
+  - `POST /api/agent/log`: Para enviar registros de actividad.
+  - `POST /api/agent/notification`: Para subir las notificaciones descargadas.
+- **Entorno**: El agente se ejecutará en máquinas Windows y debe acceder al almacén de certificados del sistema (MSCAPI).
+
+# Tareas a Realizar
+
+1.  **Crear `requirements.txt`**:
+    - Incluye las dependencias necesarias: `requests` (o `aiohttp`), `selenium`, `pywin32` (para certificados en Windows), `load_dotenv`, etc.
+
+2.  **Implementar [agent.py](cci:7://file:///e:/Vento-LexOps/agent.py:0:0-0:0)**:
+    - Crea la clase principal `VentoAgent` que maneje el ciclo de vida de la aplicación.
+    - Implementa el bucle principal (`asyncio`) que envíe un *heartbeat* cada 30 segundos.
+    - Implementa la lógica para manejar la respuesta del heartbeat. Si el comando es `SYNC_LEXNET`, debe disparar el proceso de automatización.
+
+3.  **Implementar Módulos de Soporte** (dentro de [agent.py](cci:7://file:///e:/Vento-LexOps/agent.py:0:0-0:0) o archivos separados si es necesario):
+    - **`CertificateManager`**: Clase para listar y seleccionar certificados digitales del almacén de Windows (`MY` store). Debe permitir obtener la huella digital (thumbprint) para la autenticación.
+    - **`LexNetAutomator`**: Clase que utilice Selenium con **Microsoft Edge** para:
+        - Iniciar el navegador cargando el perfil del certificado seleccionado.
+        - Navegar a LexNET (`lexnet.justicia.es`).
+        - (Simular) la descarga de notificaciones y extracción de datos.
+
+# Requisitos Técnicos
+- Usa **Python 3.10+** con Type Hints.
+- El código debe ser robusto ante fallos de red (implementar `retry_with_backoff` como sugiere la documentación).
+- Los logs deben enviarse al servidor y también mostrarse en consola.
+- La configuración debe leerse de variables de entorno (usa `python-dotenv`).
+
+# Salida Esperada
+- Código completo de [agent.py](cci:7://file:///e:/Vento-LexOps/agent.py:0:0-0:0).
+- Contenido de `requirements.txt`.
+- Instrucciones breves para ejecutar el agente.

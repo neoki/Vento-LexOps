@@ -1,0 +1,65 @@
+"Actúa como un Experto en Automatización de Legal Operations especializado en el sistema judicial español (LexNET). Tu objetivo es procesar notificaciones entrantes y ejecutar un flujo de trabajo sin errores siguiendo estas instrucciones detalladas:
+1. Fase de Recepción y Triaje Temporal:
+• Regla de Oro: Cada notificación debe ser abierta el mismo día de su recepción.
+• Cómputo Crítico: Si una notificación no se abre en 3 días hábiles, el sistema la dará por notificada automáticamente y comenzarán a correr los plazos procesales.
+• Identificación de Urgencia: Clasifica la notificación según su prioridad inmediata y asigna etiquetas de urgencia para el equipo letrado.
+2. Procesamiento Documental y Extracción de Metadatos:
+• Análisis de Nomenclatura (v5.3): Analiza el nombre del archivo descargado. Si es un lote, vendrá en un ZIP con el formato fecha+idsesion.
+• Parseo de Carpetas: Extrae la información de la carpeta de notificación siguiendo el patrón: <idLexNET>_<año procedimiento>_<nº procedimiento>_<tipo procedimiento>.
+• Verificación de Calidad: Confirma que el documento principal sea un PDF/A con capa OCR (texto buscable). Si el documento es una imagen 'plana', notifica la necesidad de aplicar un motor de reconocimiento externo para extraer el NIG y los nombres de las partes.
+3. Vinculación y Distribución Inteligente:
+• Sincronización con CRM: Utiliza el NIG y el número de autos para vincular automáticamente los archivos al expediente digital del cliente.
+• Mecanismo de Reenvío: Si actúas como sistema de procurador, prepara el traslado automático de copias al abogado responsable en cuestión de minutos, incluyendo los plazos ya calculados.
+4. Control de Agenda y Plazos:
+• Cálculo Procesal: Registra la fecha de inicio de plazos (día siguiente a la notificación efectiva).
+• Día de Gracia: Marca en el calendario el vencimiento y el 'día de gracia' (válido hasta las 15:00:59h del siguiente día hábil).
+• Alertas Transversales: Configura recordatorios automatizados (email/SMS) con al menos 24-48 horas de antelación al hito procesal.
+5. Gestión de Incidencias y Excesos de Cabida:
+• Detección de Errores: Si detectas documentos duplicados o señales inconsistentes, genera una alerta para subsanar mediante un escrito de trámite inmediato.
+• Lógica ACCEDA: Si los adjuntos superan los 10-15 MB, activa el protocolo de ACCEDA-Justicia. Debes presentar el escrito principal en LexNET, obtener el IdLexNET, e iniciar la solicitud en ACCEDA usando dicho ID para vincular la documentación voluminosa.
+¿Entiendes este procedimiento? Si es así, prepárate para analizar el metadato de la próxima notificación."
+
+--------------------------------------------------------------------------------
+Puntos clave del procedimiento (según las fuentes)
+• Centralización del Negocio: La automatización busca que el despacho funcione como una operación empresarial donde el software (como LEX-ON) elimine la sobrecarga cognitiva mediante dashboards con KPIs críticos, como vencimientos inminentes.
+• Trazabilidad Total: Es fundamental registrar qué usuario modifica o descarga cada notificación para garantizar la seguridad jurídica del titular del despacho.
+• Integración Técnica: El sistema debe prever que el acceso requiere certificados ACA y que el entorno Java esté correctamente configurado para evitar fallos de conexión.
+• Visibilidad para el Cliente: La automatización puede concluir publicando hitos automáticos en el Portal del Cliente, permitiendo que este consulte el estado de su expediente de forma autónoma.
+Analogía: Gestionar LexNET sin automatización es como intentar organizar una biblioteca nacional usando solo notas adhesivas; tarde o temprano, algo se perderá. Automatizarlo es instalar un sistema de escaneo y clasificación robótica que coloca cada libro en su estante exacto y activa una alarma justo antes de que expire su préstamo, permitiendo que el bibliotecario (el abogado) se dedique solo a estudiar el contenido, no a cargar cajas. [Analogía propia basada en los conceptos de las fuentes 48, 58, 108].
+Imagina que eres un ingeniero de software senior, cual sería el documento de especificaciones y requirimientos para tu equipo de desarrolladores
+
+Como ingeniero de software senior, mi responsabilidad es traducir la operativa legal en una arquitectura técnica robusta y escalable. Este documento de especificaciones define los requisitos para que el equipo de desarrollo construya un sistema de automatización integral basado en LexNET y ACCEDA-Justicia.
+
+--------------------------------------------------------------------------------
+Documento de Especificaciones Técnicas: Proyecto Lex-Auto
+1. Objetivo del Sistema
+Construir un nodo de inteligencia procesal que centralice la recepción, clasificación y envío de documentación judicial, eliminando el error humano y garantizando la trazabilidad total mediante una arquitectura SaaS en la nube.
+2. Requerimientos de Arquitectura e Integración
+• Protocolo de Comunicación: El sistema debe evitar el web scraping e integrarse exclusivamente mediante los servicios web oficiales (WS-Lexnet) homologados por la Subdirección General de Nuevas Tecnologías de la Justicia.
+• Gestión de Certificados: Implementar soporte para tarjetas criptográficas con firma ACA e integración nativa con AutoFirma para la ejecución de firmas electrónicas cualificadas.
+• Seguridad: Cumplimiento estricto del Esquema Nacional de Seguridad (ENS), asegurando que los servidores residan en la UE y que los datos en reposo estén cifrados (AES-256).
+3. Requerimientos Funcionales (Backend)
+• Módulo de Recepción y Triaje:
+    ◦ Sincronización automática periódica (intervalo de 5-15 min) para descargar notificaciones.
+    ◦ Parser de Nomenclatura (v5.3): El sistema debe descomponer el nombre de los archivos ZIP (fecha+idsesion) y carpetas siguiendo el patrón <idLexNET>_<año>_<nº>_<tipo> para identificar unívocamente el procedimiento.
+• Módulo de Inteligencia Documental:
+    ◦ Validación PDF/A: Verificar que cada documento principal cumpla con el estándar PDF/A y tenga capa de texto OCR.
+    ◦ Motor OCR de Respaldo: Si se detecta una imagen plana, el sistema debe aplicar un motor de reconocimiento propio para extraer el NIG y los nombres de las partes.
+• Lógica de Vinculación CRM:
+    ◦ Asociación automática de notificaciones al expediente digital del cliente mediante el cruce de metadatos (Número de autos/NIG).
+• Motor de Plazos y Agenda:
+    ◦ Cálculo automatizado de vencimientos procesales (LEC) y marcado del "día de gracia" (hasta las 15:00:59h del día siguiente hábil).
+    ◦ Configuración de alertas transversales (preavisos de 24-48h) que eviten la saturación del correo electrónico.
+4. Gestión de Excepciones: Protocolo ACCEDA
+• Detección de Exceso de Cabida: El sistema debe monitorizar el tamaño de los adjuntos. Si superan los 10-15 MB, debe rechazar el envío por LexNET e iniciar automáticamente el flujo en ACCEDA-Justicia.
+• Automatización ACCEDA: Capturar el IdLexNET del envío principal, generar el justificante de exceso de cabida y subir los adjuntos voluminosos (comprimidos en ZIP si es necesario) para completar el registro.
+5. Frontend y UX
+• Dashboard Estratégico: Panel responsivo con KPIs críticos (vencimientos de hoy, facturas pendientes de cobro, carga de trabajo por responsable).
+• Trazabilidad: Vista de historial que registre qué usuario descargó, modificó o eliminó cualquier actuación, con marca de tiempo precisa.
+• Portal del Cliente: Módulo para que el cliente final consulte el estado de su expediente y descargue documentos de forma autónoma.
+6. Conservación y Cumplimiento Legal
+• Archivo Definitivo: Programar el cifrado de larga duración y la conservación de documentos por un mínimo de 10 años (conforme a la Ley de Prevención de Blanqueo de Capitales).
+• Minimización de Datos: Ejecutar protocolos de destrucción segura una vez expirados los plazos de responsabilidad profesional.
+
+--------------------------------------------------------------------------------
+Analogía para el equipo: Construir este software es como diseñar un sistema de clasificación para una oficina de correos inteligente. No solo queremos que el cartero (LexNET) deje la carta; queremos que un robot la escanee, reconozca a qué cliente pertenece, la archive en su carpeta correspondiente y active una alarma roja en la mesa del abogado si la carta contiene una citación que caduca en 48 horas. Si el paquete es demasiado grande para el buzón (exceso de cabida), el sistema debe redirigirlo automáticamente al muelle de carga (ACCEDA) sin que el abogado tenga que levantarse de su silla.
