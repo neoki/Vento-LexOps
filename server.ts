@@ -1219,6 +1219,324 @@ app.post('/api/deadlines/:notificationId/calculate', requireAuth, async (req, re
   }
 });
 
+app.get('/api/alerts/three-day-rule', requireAuth, async (req, res) => {
+  try {
+    const { checkThreeDayRule } = await import('./server/three-day-rule-service');
+    const summary = await checkThreeDayRule();
+    res.json(summary);
+  } catch (error) {
+    console.error('Error checking three-day rule:', error);
+    res.status(500).json({ error: 'Error verificando regla de 3 días' });
+  }
+});
+
+app.get('/api/manager/lawyers-status', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const officeId = user.officeId;
+    
+    const lawyers = await db.select({
+      id: users.id,
+      fullName: users.fullName,
+      color: users.color,
+    }).from(users).where(and(
+      eq(users.role, 'LAWYER'),
+      eq(users.isActive, true),
+      officeId ? eq(users.officeId, officeId) : sql`1=1`
+    ));
+    
+    const lawyerStatuses = await Promise.all(lawyers.map(async (lawyer) => {
+      const pendingNotifs = await db.select({ count: sql<number>`count(*)` })
+        .from(notifications)
+        .where(and(
+          eq(notifications.assignedLawyerId, lawyer.id),
+          sql`${notifications.status} IN ('EXTRACTED', 'TRIAGE_REQUIRED', 'TRIAGED', 'PLAN_DRAFTED')`
+        ));
+      
+      const pendingCount = Number(pendingNotifs[0]?.count || 0);
+      
+      let workload: 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL' = 'LOW';
+      if (pendingCount > 20) workload = 'CRITICAL';
+      else if (pendingCount > 10) workload = 'HIGH';
+      else if (pendingCount > 5) workload = 'NORMAL';
+      
+      return {
+        ...lawyer,
+        pendingNotifications: pendingCount,
+        urgentDeadlines: 0,
+        overdueTasks: 0,
+        completedToday: 0,
+        workload
+      };
+    }));
+    
+    res.json({
+      lawyers: lawyerStatuses,
+      totalPendingNotifications: lawyerStatuses.reduce((sum, l) => sum + l.pendingNotifications, 0),
+      totalUrgentDeadlines: lawyerStatuses.reduce((sum, l) => sum + l.urgentDeadlines, 0),
+      totalOverdueTasks: lawyerStatuses.reduce((sum, l) => sum + l.overdueTasks, 0)
+    });
+  } catch (error) {
+    console.error('Error getting lawyers status:', error);
+    res.status(500).json({ error: 'Error obteniendo estado de letrados' });
+  }
+});
+
+app.get('/api/manager/lawyers', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const officeId = user.officeId;
+    
+    const lawyersList = await db.select({
+      id: users.id,
+      username: users.username,
+      email: users.email,
+      fullName: users.fullName,
+      role: users.role,
+      color: users.color,
+      certificateType: users.certificateType,
+      certificateThumbprint: users.certificateThumbprint,
+      isActive: users.isActive,
+      teamId: users.teamId,
+    }).from(users).where(and(
+      eq(users.role, 'LAWYER'),
+      officeId ? eq(users.officeId, officeId) : sql`1=1`
+    ));
+    
+    res.json({ lawyers: lawyersList });
+  } catch (error) {
+    console.error('Error getting lawyers:', error);
+    res.status(500).json({ error: 'Error obteniendo letrados' });
+  }
+});
+
+app.post('/api/manager/lawyers', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { username, email, fullName, password, color, teamId, certificateType, certificateThumbprint } = req.body;
+    
+    const bcrypt = await import('bcrypt');
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    const [newLawyer] = await db.insert(users).values({
+      username,
+      email,
+      fullName,
+      password: hashedPassword,
+      role: 'LAWYER',
+      color: color || '#3B82F6',
+      officeId: user.officeId,
+      teamId: teamId ? parseInt(teamId) : null,
+      certificateType: certificateType || null,
+      certificateThumbprint: certificateThumbprint || null,
+      isActive: true,
+      isPendingApproval: false
+    }).returning();
+    
+    await logAudit(user.id, 'CREATE_LAWYER', 'USER', newLawyer.id, { fullName }, req.ip);
+    
+    res.status(201).json({ lawyer: newLawyer });
+  } catch (error) {
+    console.error('Error creating lawyer:', error);
+    res.status(500).json({ error: 'Error creando letrado' });
+  }
+});
+
+app.put('/api/manager/lawyers/:id', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const lawyerId = parseInt(req.params.id);
+    const { email, fullName, color, teamId, certificateType, certificateThumbprint } = req.body;
+    
+    const [updated] = await db.update(users)
+      .set({
+        email,
+        fullName,
+        color,
+        teamId: teamId ? parseInt(teamId) : null,
+        certificateType: certificateType || null,
+        certificateThumbprint: certificateThumbprint || null,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, lawyerId))
+      .returning();
+    
+    await logAudit(user.id, 'UPDATE_LAWYER', 'USER', lawyerId, { fullName, color }, req.ip);
+    
+    res.json({ lawyer: updated });
+  } catch (error) {
+    console.error('Error updating lawyer:', error);
+    res.status(500).json({ error: 'Error actualizando letrado' });
+  }
+});
+
+app.delete('/api/manager/lawyers/:id', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const lawyerId = parseInt(req.params.id);
+    
+    await db.update(users)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(users.id, lawyerId));
+    
+    await logAudit(user.id, 'DEACTIVATE_LAWYER', 'USER', lawyerId, {}, req.ip);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deactivating lawyer:', error);
+    res.status(500).json({ error: 'Error desactivando letrado' });
+  }
+});
+
+app.get('/api/lawyer/stats', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    
+    const pendingNotifs = await db.select({ count: sql<number>`count(*)` })
+      .from(notifications)
+      .where(and(
+        eq(notifications.assignedLawyerId, user.id),
+        sql`${notifications.status} IN ('EXTRACTED', 'TRIAGE_REQUIRED', 'TRIAGED', 'PLAN_DRAFTED')`
+      ));
+    
+    res.json({
+      pendingNotifications: Number(pendingNotifs[0]?.count || 0),
+      urgentDeadlines: 0,
+      tasksToday: 0,
+      completedThisWeek: 0
+    });
+  } catch (error) {
+    console.error('Error getting lawyer stats:', error);
+    res.status(500).json({ error: 'Error obteniendo estadísticas' });
+  }
+});
+
+app.get('/api/lawyer/deadlines', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { proceduralTasks } = await import('./shared/schema');
+    
+    const tasks = await db.select()
+      .from(proceduralTasks)
+      .where(and(
+        eq(proceduralTasks.lawyerId, user.id),
+        eq(proceduralTasks.status, 'PENDING')
+      ))
+      .orderBy(proceduralTasks.dueDate)
+      .limit(10);
+    
+    const today = new Date();
+    const deadlines = tasks.map(task => ({
+      id: task.id,
+      title: task.title,
+      dueDate: task.dueDate?.toISOString(),
+      gracePeriodEnd: task.gracePeriodEnd?.toISOString(),
+      taskType: task.taskType,
+      status: task.status,
+      priority: task.priority,
+      procedureNumber: task.procedureNumber || '',
+      court: task.court || '',
+      daysRemaining: task.dueDate ? Math.ceil((task.dueDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000)) : 0
+    }));
+    
+    res.json({ deadlines });
+  } catch (error) {
+    console.error('Error getting lawyer deadlines:', error);
+    res.status(500).json({ error: 'Error obteniendo plazos' });
+  }
+});
+
+app.get('/api/lawyer/notifications/pending', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    
+    const notifs = await db.select()
+      .from(notifications)
+      .where(and(
+        eq(notifications.assignedLawyerId, user.id),
+        sql`${notifications.status} IN ('EXTRACTED', 'TRIAGE_REQUIRED', 'TRIAGED', 'PLAN_DRAFTED')`
+      ))
+      .orderBy(desc(notifications.receivedDate))
+      .limit(10);
+    
+    res.json({
+      notifications: notifs.map(n => ({
+        id: n.id,
+        lexnetId: n.lexnetId,
+        procedureNumber: n.procedureNumber,
+        court: n.court,
+        status: n.status,
+        priority: n.priority,
+        receivedDate: n.receivedDate?.toISOString()
+      }))
+    });
+  } catch (error) {
+    console.error('Error getting pending notifications:', error);
+    res.status(500).json({ error: 'Error obteniendo notificaciones pendientes' });
+  }
+});
+
+app.get('/api/teams', requireAuth, async (req, res) => {
+  try {
+    const { teams } = await import('./shared/schema');
+    const user = (req as any).user;
+    
+    const teamsList = await db.select()
+      .from(teams)
+      .where(and(
+        eq(teams.isActive, true),
+        user.officeId ? eq(teams.officeId, user.officeId) : sql`1=1`
+      ));
+    
+    res.json({ teams: teamsList });
+  } catch (error) {
+    console.error('Error getting teams:', error);
+    res.status(500).json({ error: 'Error obteniendo equipos' });
+  }
+});
+
+app.post('/api/hearings/:notificationId/generate-tasks', requireAuth, async (req, res) => {
+  try {
+    const notificationId = parseInt(req.params.notificationId);
+    const { hearingDate, clientName, opposingParty } = req.body;
+    
+    const [notification] = await db.select()
+      .from(notifications)
+      .where(eq(notifications.id, notificationId))
+      .limit(1);
+    
+    if (!notification) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+    
+    const { generateHearingTasks } = await import('./server/hearing-tasks-service');
+    
+    const taskIds = await generateHearingTasks({
+      notificationId,
+      lawyerId: notification.assignedLawyerId!,
+      hearingDate: new Date(hearingDate),
+      court: notification.court,
+      procedureNumber: notification.procedureNumber,
+      clientName,
+      opposingParty
+    });
+    
+    await logAudit(
+      (req as any).user.id,
+      'GENERATE_HEARING_TASKS',
+      'NOTIFICATION',
+      notificationId,
+      { taskIds, hearingDate },
+      req.ip
+    );
+    
+    res.json({ success: true, taskIds });
+  } catch (error) {
+    console.error('Error generating hearing tasks:', error);
+    res.status(500).json({ error: 'Error generando tareas de señalamiento' });
+  }
+});
+
 if (isProduction) {
   app.get('/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));

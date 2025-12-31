@@ -3,7 +3,8 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const userRoleEnum = pgEnum('user_role', ['ADMIN', 'LAWYER', 'ASSISTANT']);
+export const userRoleEnum = pgEnum('user_role', ['ADMIN', 'LAWYER', 'ASSISTANT', 'MANAGER']);
+export const certificateTypeEnum = pgEnum('certificate_type', ['ACA', 'FNMT', 'OTHER']);
 export const aiProviderEnum = pgEnum('ai_provider', ['OPENAI', 'GEMINI', 'NONE']);
 export const invitationStatusEnum = pgEnum('invitation_status', ['PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED']);
 export const notificationStatusEnum = pgEnum('notification_status', [
@@ -75,6 +76,10 @@ export const users = pgTable("users", {
   categoryId: integer("category_id").references(() => categories.id),
   tutorUserId: integer("tutor_user_id"),
   teamsUserId: text("teams_user_id"),
+  color: text("color").default('#3B82F6'),
+  managedBy: integer("managed_by"),
+  certificateType: certificateTypeEnum("certificate_type"),
+  certificateThumbprint: text("certificate_thumbprint"),
   useAi: boolean("use_ai").default(true),
   isActive: boolean("is_active").notNull().default(true),
   isPendingApproval: boolean("is_pending_approval").default(false),
@@ -292,6 +297,52 @@ export const deadlineRules = pgTable("deadline_rules", {
   augustExempt: boolean("august_exempt").default(false),
   description: text("description"),
   derivedEvents: jsonb("derived_events"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const taskStatusEnum = pgEnum('task_status', ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'OVERDUE']);
+export const taskTypeEnum = pgEnum('task_type', ['DEADLINE', 'HEARING', 'PREPARATION', 'CLIENT_MEETING', 'EVIDENCE_DEADLINE', 'REMINDER', 'CUSTOM']);
+
+export const proceduralTasks = pgTable("procedural_tasks", {
+  id: serial("id").primaryKey(),
+  notificationId: integer("notification_id").references(() => notifications.id),
+  lawyerId: integer("lawyer_id").references(() => users.id).notNull(),
+  parentTaskId: integer("parent_task_id"),
+  taskType: taskTypeEnum("task_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  dueDate: timestamp("due_date").notNull(),
+  dueTime: text("due_time"),
+  gracePeriodEnd: timestamp("grace_period_end"),
+  isAllDay: boolean("is_all_day").default(true),
+  status: taskStatusEnum("status").notNull().default('PENDING'),
+  priority: priorityEnum("priority").default('MEDIUM'),
+  outlookEventId: text("outlook_event_id"),
+  isOutlookSynced: boolean("is_outlook_synced").default(false),
+  completedAt: timestamp("completed_at"),
+  completedBy: integer("completed_by").references(() => users.id),
+  justification: text("justification"),
+  justificationAttachment: text("justification_attachment"),
+  court: text("court"),
+  procedureNumber: text("procedure_number"),
+  clientName: text("client_name"),
+  opposingParty: text("opposing_party"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const taskTemplates = pgTable("task_templates", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  taskType: taskTypeEnum("task_type").notNull(),
+  triggerType: text("trigger_type").notNull(),
+  offsetDays: integer("offset_days").notNull(),
+  offsetDirection: text("offset_direction").default('before'),
+  titleTemplate: text("title_template").notNull(),
+  descriptionTemplate: text("description_template"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -568,6 +619,21 @@ export const holidaysRelations = relations(holidays, ({ one }) => ({
   }),
 }));
 
+export const proceduralTasksRelations = relations(proceduralTasks, ({ one }) => ({
+  notification: one(notifications, {
+    fields: [proceduralTasks.notificationId],
+    references: [notifications.id],
+  }),
+  lawyer: one(users, {
+    fields: [proceduralTasks.lawyerId],
+    references: [users.id],
+  }),
+  completer: one(users, {
+    fields: [proceduralTasks.completedBy],
+    references: [users.id],
+  }),
+}));
+
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email(),
   username: z.string().min(3).max(50),
@@ -612,3 +678,7 @@ export type CaseMatch = typeof caseMatches.$inferSelect;
 export type InsertCaseMatch = typeof caseMatches.$inferInsert;
 export type ExternalDownload = typeof externalDownloads.$inferSelect;
 export type InsertExternalDownload = typeof externalDownloads.$inferInsert;
+export type ProceduralTask = typeof proceduralTasks.$inferSelect;
+export type InsertProceduralTask = typeof proceduralTasks.$inferInsert;
+export type TaskTemplate = typeof taskTemplates.$inferSelect;
+export type InsertTaskTemplate = typeof taskTemplates.$inferInsert;
