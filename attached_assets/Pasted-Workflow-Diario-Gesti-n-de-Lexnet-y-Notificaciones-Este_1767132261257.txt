@@ -1,0 +1,88 @@
+Workflow Diario: Gestión de Lexnet y Notificaciones
+Este proceso debe ejecutarse cada mañana de forma cíclica:
+
+
+1. Triaje y Descarga (Input)
+
+Revisión de Lexnet: Acceso diario al buzón de cada letrado.
+
+
+Control de Errores: Comprobar notificaciones rechazadas; si existen, analizar causa y re-presentar de inmediato.
+
+
+
+
+Aceptación y Captura: Aceptar notificaciones, descargarlas y capturar siempre el justificante de descarga.
+
+
+2. Procesamiento de Datos (Ingesta en Invento)
+
+Numeración Indexada: Guardar en el expediente con formato [00, 01, 02...] + [Nombre Documento].
+
+
+
+Regla de atomicidad: Todos los archivos de una misma notificación llevan el mismo número de prefijo.
+
+
+Categorización por Instancia: Organizar en carpetas específicas: 1ª Instancia, 2ª Instancia (RSU), 3ª Instancia (RCUD) o Ejecución.
+
+
+Normalización de Nombres: Renombrar archivos críticos (sentencias, autos, señalamientos) para identificación rápida.
+
+3. Comunicación y Alerta (Output)
+
+Resumen ZIP: Enviar email al letrado responsable (con copia a implicados) incluyendo las notificaciones en un archivo comprimido.
+
+
+Codificación Visual: En el cuerpo del mail, subrayar cada asunto con el color corporativo asignado al letrado.
+
+
+Confirmación de Tareas: Si se descarga material pesado (grabaciones de juicios o expedientes administrativos), confirmar específicamente al letrado que la descarga está disponible en Invento.
+
+📅 Protocolo de Agendado y Control de Plazos
+El sistema de seguridad para evitar fallos de responsabilidad civil profesional:
+
+1. El Calendario de Outlook
+
+Agenda Común: Plazos, señalamientos, reuniones y vacaciones.
+
+
+Formato de Visibilidad: Los plazos se marcan como "Todo el día" para evitar que queden ocultos fuera del scroll de la jornada.
+
+
+
+Estado de Ejecución: Es obligatorio marcar como GRIS ("HECHO") los plazos superados.
+
+
+Auditoría: Si un plazo no se ejecuta, se debe adjuntar pantallazo o mail justificativo en la nota de la agenda.
+
+2. Algoritmo de Cálculo de Plazos 
+
+
+
+Trigger: Día de la notificación.
+
+Inicio: Empieza a contar el día hábil siguiente.
+
+Cómputo: Lunes a viernes (excluyendo festivos y fines de semana).
+
+
+Agosto: Inhábil por defecto, excepto en materias críticas (Despidos, MSCT, Vacaciones, Tutela Derechos Fundamentales, etc.).
+
+
+Fecha Crítica: Se apunta el último día (sin contar días de gracia).
+
+
+3. Estructura de Señalamientos (Juicios)
+Al recibir una fecha de juicio, se disparan automáticamente estas sub-tareas en agenda:
+
+
+T-minus 1.5 meses: Fijar cita interna de preparación.
+
+
+T-minus 1 mes: Reunión con el cliente.
+
+
+T-minus 15 días: Límite para solicitar/aportar prueba.
+
+Día del Juicio: Formato Juicio [Cliente] vs [Contrario] | Autos | Juzgado.

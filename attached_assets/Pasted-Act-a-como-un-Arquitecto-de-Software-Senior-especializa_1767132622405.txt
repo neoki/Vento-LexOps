@@ -1,0 +1,69 @@
+Actúa como un Arquitecto de Software Senior especializado en LegalTech y Operaciones Judiciales en España. Tu misión es diseñar la solución técnica para "Lex-Auto", un sistema crítico que gestiona notificaciones judiciales de LexNET.
+
+Advertencia: Este no es un simple script de descarga. Es un sistema de misión crítica donde un error puede costar la pérdida de un pleito (preclusión de plazos). El sistema debe comportarse con la fiabilidad de un sistema bancario.
+
+Objetivos del Sistema
+Diseñar un sistema que automatice el ciclo de vida completo de una notificación judicial: desde que aparece en LexNET hasta que se integra en el expediente del abogado con sus plazos calculados.
+
+Requerimientos de Dominio (Reglas de Negocio)
+1. Recepción y Triaje Crítico
+Regla de los 3 Días: El sistema debe monitorizar la antigüedad de las notificaciones no aceptadas. Si se acercan a los 3 días sin descarga, debe emitir alertas críticas.
+Integridad del Dato: No basta con descargar. Se debe verificar criptográficamente que lo descargado coincide con lo notificado.
+2. Procesamiento Inteligente
+Validación Documental:
+Todo PDF debe ser PDF/A.
+Si es "imagen plana" (sin texto seleccionable), el sistema debe rechazarlo o enviarlo a una cola de OCR prioritario.
+Ingeniería de Nomenclatura:
+Debe ser capaz de parsear nombres de archivo crípticos (ej: 2024_00123_ORD_...) para extraer metadatos: Juzgado, Tipo de Procedimiento, Año, Número de Autos y NIG.
+3. Motor de Plazos Procesales y Agenda (Core Business)
+Cálculo de Vencimientos (Algoritmo LEC):
+Trigger: Fecha de notificación. Inicio: Día hábil siguiente.
+Exclusiones: Sábados, domingos, festivos (Nacionales/Autonómicos) y Agosto (salvo excepciones: Despidos, DDFF, cautelares).
+Output: Fecha límite + "Día de Gracia" (hasta 15:00 del día siguiente).
+Integración Outlook (Reglas de Visualización):
+Los plazos se crean como "Todo el día".
+Estado visual: Un plazo cumplido debe marcarse en GRIS ("Hecho").
+Auditoría: Si un plazo vence sin marcarse, requiere justificación obligatoria.
+Estructura de Señalamientos (Juicios):
+Al detectar una fecha de juicio, disparar Retro-planning Automático:
+T-1.5 meses: Preparación interna.
+T-1 mes: Cita con cliente.
+T-15 días: Límite proposición de prueba.
+Asunto del evento: Juicio [Cliente] vs [Contrario] | Autos | Juzgado.
+4. Gestión de Excepciones y Protocolo Documental
+Regla de Atomicidad e Indexación:
+Los archivos de una notificación deben renombrarse con prefijos indexados: [00] Principal, [01] Adjunto1, etc.
+Organización en carpetas por Instancia: 1ª Instancia, RSU (Suplicación), RCUD (Casación), Ejecución.
+Protocolo ACCEDA (>15MB):
+Detectar tamaño >15MB -> Presentar índice en LexNET -> Obtener ID -> Subir adjuntos a ACCEDA vinculados a ese ID.
+Confirmación explícita al letrado de descarga de material pesado (grabaciones).
+Requerimientos de Interfaz y Roles (UI/UX)
+A. Diferenciación de Roles
+Vista Letrado: Dashboard simplificado. "Mis Vencimientos", "Mis Notificaciones Pendientes". Foco en el trabajo sustantivo.
+Vista Gestora/Admin:
+Panel de tráfico aéreo ("Air Traffic Control"): Ver el estado de todos los letrados.
+Gestión de Letrados: CRUD de usuarios abogados.
+Codificación Visual: Asignar un Color Corporativo único a cada abogado. Este color debe usarse en:
+Cuerpo del email de resumen diario.
+Etiquetas en el calendario compartido.
+Dashboard de la gestora.
+B. Comunicaciones (Output)
+Newsletter Diaria: Email automático matutino con ZIP adjunto de notificaciones.
+El cuerpo del correo debe tener código visual (colores) para que cada abogado escanee rápidamente sus asuntos.
+Requerimientos Técnicos y de Arquitectura
+A. Estrategia de Conexión
+Evaluar el uso de WS-LexNET (SOAP) vs Automatización de Navegador (Selenium/Playwright).
+Preferencia: WS-LexNET por robustez. Si no es viable (falta de credenciales de integrador), diseñar una capa de abstracción sobre Selenium que sea indistinguible en fiabilidad (reintentos, manejo de sesiones, gestión de certificados hardware/software).
+B. Seguridad y Trazabilidad
+Certificados Digitales: El sistema debe gestionar múltiples certificados (ACA, FNMT) de forma segura, posiblemente rotándolos o seleccionándolos según el usuario.
+Audit Log Forense: Cada acción (login, descarga, cálculo de plazo) debe quedar registrada con timestamp inmutable. Esto es la defensa del abogado en caso de fallo.
+Salida Esperada (Lo que debes generar)
+No escribas código todavía. Necesito que generes un Documento de Diseño Técnico (TDD) que incluya:
+
+Diagrama de Flujo de Datos: Desde LexNET hasta el CRM del despacho.
+Modelo de Datos Propuesto: Esquema de base de datos para manejar Notificaciones, Plazos y Auditoría.
+Pseudocódigo de Lógica Crítica:
+Algoritmo de cálculo de plazos (con festivos y gracia).
+Máquina de estados para el flujo ACCEDA.
+Estrategia de Infraestructura: ¿Cómo se despliega esto de forma segura? (Docker, Windows Services para acceso a tarjetas criptográficas, etc.).
+Piensa como un Arquitecto Senior. La prioridad es la Robustez y la Seguridad Jurídica.
