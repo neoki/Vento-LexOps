@@ -1537,6 +1537,142 @@ app.post('/api/hearings/:notificationId/generate-tasks', requireAuth, async (req
   }
 });
 
+app.get('/api/newsletter/preview', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { getNewsletterPreview } = await import('./server/daily-newsletter-service');
+    const preview = await getNewsletterPreview(user.officeId);
+    res.json(preview);
+  } catch (error) {
+    console.error('Error generating newsletter preview:', error);
+    res.status(500).json({ error: 'Error generando preview de newsletter' });
+  }
+});
+
+app.post('/api/newsletter/generate', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { generateNewsletterWithZip } = await import('./server/daily-newsletter-service');
+    const newsletter = await generateNewsletterWithZip(user.officeId);
+    
+    await logAudit(user.id, 'GENERATE_NEWSLETTER', 'NEWSLETTER', 0, { 
+      totalNotifications: newsletter.totalNotifications,
+      lawyerCount: newsletter.lawyerSummaries.length
+    }, req.ip);
+    
+    res.json({
+      html: newsletter.htmlBody,
+      stats: {
+        totalNotifications: newsletter.totalNotifications,
+        totalUrgentDeadlines: newsletter.totalUrgentDeadlines,
+        totalCriticalAlerts: newsletter.totalCriticalAlerts
+      },
+      hasZip: !!newsletter.zipAttachment
+    });
+  } catch (error) {
+    console.error('Error generating newsletter:', error);
+    res.status(500).json({ error: 'Error generando newsletter' });
+  }
+});
+
+app.get('/api/ocr/queue', requireAuth, async (req, res) => {
+  try {
+    const { getOCRQueue, getOCRQueueStats } = await import('./server/ocr-queue-service');
+    const [queue, stats] = await Promise.all([getOCRQueue(), getOCRQueueStats()]);
+    res.json({ queue, stats });
+  } catch (error) {
+    console.error('Error getting OCR queue:', error);
+    res.status(500).json({ error: 'Error obteniendo cola OCR' });
+  }
+});
+
+app.post('/api/ocr/detect/:packageId', requireAuth, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.packageId);
+    const { detectImageOnlyPDFs } = await import('./server/ocr-queue-service');
+    const documentIds = await detectImageOnlyPDFs(packageId);
+    res.json({ detected: documentIds.length, documentIds });
+  } catch (error) {
+    console.error('Error detecting image-only PDFs:', error);
+    res.status(500).json({ error: 'Error detectando PDFs de imagen' });
+  }
+});
+
+app.post('/api/ocr/complete/:documentId', requireAuth, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.documentId);
+    const { extractedText } = req.body;
+    const { markOCRCompleted } = await import('./server/ocr-queue-service');
+    await markOCRCompleted(documentId, extractedText);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking OCR completed:', error);
+    res.status(500).json({ error: 'Error marcando OCR completado' });
+  }
+});
+
+app.get('/api/calendar/events', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const start = req.query.start ? new Date(req.query.start as string) : new Date();
+    const end = req.query.end ? new Date(req.query.end as string) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    
+    const { getCalendarEvents } = await import('./server/calendar-sync-service');
+    const events = await getCalendarEvents(user.id, start, end);
+    res.json({ events });
+  } catch (error) {
+    console.error('Error getting calendar events:', error);
+    res.status(500).json({ error: 'Error obteniendo eventos de calendario' });
+  }
+});
+
+app.post('/api/tasks/:taskId/complete', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const taskId = parseInt(req.params.taskId);
+    const { markTaskCompleted } = await import('./server/calendar-sync-service');
+    await markTaskCompleted(taskId, user.id);
+    
+    await logAudit(user.id, 'COMPLETE_TASK', 'PROCEDURAL_TASK', taskId, {}, req.ip);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error completing task:', error);
+    res.status(500).json({ error: 'Error completando tarea' });
+  }
+});
+
+app.post('/api/tasks/:taskId/justify', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const taskId = parseInt(req.params.taskId);
+    const { justification } = req.body;
+    
+    if (!justification || justification.trim().length < 10) {
+      return res.status(400).json({ error: 'La justificacion debe tener al menos 10 caracteres' });
+    }
+    
+    const { addJustificationToMissedDeadline } = await import('./server/calendar-sync-service');
+    await addJustificationToMissedDeadline(taskId, user.id, justification);
+    
+    await logAudit(user.id, 'JUSTIFY_MISSED_DEADLINE', 'PROCEDURAL_TASK', taskId, { justification }, req.ip);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error adding justification:', error);
+    res.status(500).json({ error: 'Error añadiendo justificacion' });
+  }
+});
+
+app.get('/api/audit/missed-deadlines', requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { auditMissedDeadlines } = await import('./server/calendar-sync-service');
+    const entries = await auditMissedDeadlines();
+    res.json({ entries, count: entries.length });
+  } catch (error) {
+    console.error('Error auditing missed deadlines:', error);
+    res.status(500).json({ error: 'Error auditando plazos vencidos' });
+  }
+});
+
 if (isProduction) {
   app.get('/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));

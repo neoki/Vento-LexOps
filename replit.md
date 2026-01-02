@@ -128,6 +128,45 @@ npm run db:push  # Sincronizar schema DB
 ```
 
 ## Recent Changes
+- 2025-01-02: Sistema de gestión de despacho y mejoras operativas
+  - **Panel Air Traffic Control** (screens/AirTrafficControl.tsx):
+    - Vista en tiempo real de todos los abogados con indicadores de carga (LOW/NORMAL/HIGH/CRITICAL)
+    - Monitoreo de notificaciones pendientes, plazos urgentes y tareas vencidas
+    - Alertas de "Regla de 3 Días" integradas
+    - Acceso rápido a gestión de abogados
+  - **Gestión de Letrados** (screens/LawyerManagement.tsx):
+    - CRUD completo con colores corporativos (15 preset + selector personalizado)
+    - Tipos de certificado digital (ACA/FNMT/Otros)
+    - Asignación a equipos
+    - Endpoints: GET/POST/PUT/DELETE /api/manager/lawyers
+  - **Dashboard Simplificado Letrado** (screens/LawyerDashboard.tsx):
+    - Vista personal: "Mis Vencimientos" + "Mis Notificaciones Pendientes"
+    - Endpoints: GET /api/lawyer/stats, /api/lawyer/deadlines, /api/lawyer/notifications/pending
+  - **Regla de los 3 Días** (server/three-day-rule-service.ts):
+    - Alertas escalonadas: WARNING (<48h), URGENT (<24h), CRITICAL (<6h)
+    - Generación de emails HTML con urgencia
+    - Endpoint: GET /api/alerts/three-day-rule
+  - **Retro-planning Señalamientos** (server/hearing-tasks-service.ts):
+    - Tareas automáticas: T-1.5m, T-1m, T-15d antes de vista
+    - Templates configurables por tipo de procedimiento
+    - Endpoint: POST /api/hearings/:notificationId/generate-tasks
+  - **Parser LexNET** (server/lexnet-parser.ts):
+    - Extracción de juzgado, tipo procedimiento, año, número autos, NIG
+    - Soporte para todos los tipos de órganos judiciales españoles
+  - **Newsletter Diaria** (server/daily-newsletter-service.ts):
+    - Resumen codificado por colores de abogado
+    - Adjunto ZIP con paquetes del día
+    - Endpoints: GET /api/newsletter/preview, POST /api/newsletter/generate
+  - **Cola OCR Prioritaria** (server/ocr-queue-service.ts):
+    - Detección de PDFs "imagen plana" sin texto extraíble
+    - Cola priorizada por urgencia
+    - Endpoints: GET /api/ocr/queue, POST /api/ocr/detect/:packageId
+  - **Sincronización Outlook** (server/calendar-sync-service.ts):
+    - Eventos "Todo el día" con categorías de color
+    - Estado GRIS para tareas completadas
+    - Auditoría de plazos vencidos con justificación obligatoria
+    - Endpoints: GET /api/calendar/events, POST /api/tasks/:taskId/complete, POST /api/tasks/:taskId/justify, GET /api/audit/missed-deadlines
+
 - 2024-12-29: Implementación completa del procedimiento LexNET automatizado
   - **Motor de plazos procesales** (server/deadline-calculator.ts):
     - Cálculo de días hábiles excluyendo fines de semana, festivos y agosto
