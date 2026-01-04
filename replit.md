@@ -45,6 +45,15 @@ Vento LexOps es una plataforma de automatización legal para la gestión de noti
 ├── services/
 │   ├── api.ts            # Cliente API frontend
 │   └── geminiService.ts  # Servicio Gemini legacy
+├── agent/                 # Agente de escritorio Windows para LexNET
+│   ├── vento_agent.py     # Aplicación principal con icono en bandeja
+│   ├── config_manager.py  # Gestión de configuración persistente
+│   ├── certificate_manager.py # Acceso a certificados de Windows
+│   ├── lexnet_automator.py    # Automatización Selenium de LexNET
+│   ├── scheduler.py       # Programador de tareas
+│   ├── config_window.py   # Ventana de configuración Tkinter
+│   ├── requirements.txt   # Dependencias Python
+│   └── build.bat          # Script para generar ejecutable
 ├── docs/
 │   └── rpa-agent-architecture.md  # Documentación del agente RPA
 ├── App.tsx               # Componente principal React
@@ -128,6 +137,25 @@ npm run db:push  # Sincronizar schema DB
 ```
 
 ## Recent Changes
+- 2025-01-04: Agente de escritorio Windows para LexNET
+  - **Agente Desktop** (agent/):
+    - Aplicación Python con icono en bandeja del sistema (pystray)
+    - Sincronización automática programable (cada X minutos)
+    - Soporte para múltiples certificados digitales (FNMT, ACA, DNIe)
+    - Navegador headless Edge/Chrome con Selenium
+    - Carpeta de descargas configurable por la gestora
+    - Notificaciones toast cuando hay nuevas descargas
+    - Ventana de configuración Tkinter (carpeta, intervalo, cuentas)
+    - Script build.bat para generar ejecutable .exe con PyInstaller
+    - Perfil persistente de navegador para mantener sesión
+  - **Componentes**:
+    - vento_agent.py: Aplicación principal con menú de bandeja
+    - config_manager.py: Persistencia en %APPDATA%/VentoLexOps
+    - certificate_manager.py: Acceso al almacén de certificados de Windows
+    - lexnet_automator.py: Automatización con Selenium + pyautogui
+    - scheduler.py: Programador de tareas por intervalo o hora fija
+    - config_window.py: GUI Tkinter para configuración
+
 - 2025-01-02: Sistema de gestión de despacho y mejoras operativas
   - **Panel Air Traffic Control** (screens/AirTrafficControl.tsx):
     - Vista en tiempo real de todos los abogados con indicadores de carga (LOW/NORMAL/HIGH/CRITICAL)

@@ -1,0 +1,19 @@
+# Vento LexOps Agent - Dependencias Python
+# Para Windows: pip install -r requirements.txt
+
+# Core
+selenium>=4.15.0
+pillow>=10.0.0
+pystray>=0.19.0
+
+# Windows-specific (solo necesario en Windows)
+pywin32>=306; sys_platform == 'win32'
+
+# Automatizacion del dialogo de certificado de Windows
+pyautogui>=0.9.54; sys_platform == 'win32'
+
+# Opcional: Para notificaciones toast en Windows 10/11
+win10toast>=0.9; sys_platform == 'win32'
+
+# Desarrollo
+pyinstaller>=6.0.0  # Para generar ejecutable .exe
