@@ -17,7 +17,7 @@ if errorlevel 1 (
 
 REM Instalar dependencias
 echo Instalando dependencias...
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 if errorlevel 1 (
     echo ERROR: No se pudieron instalar las dependencias.
     pause
@@ -27,16 +27,10 @@ if errorlevel 1 (
 REM Generar ejecutable
 echo.
 echo Generando ejecutable...
-pyinstaller --onefile --windowed --name=VentoLexOps ^
-    --add-data "config_manager.py;." ^
-    --add-data "certificate_manager.py;." ^
-    --add-data "lexnet_automator.py;." ^
-    --add-data "scheduler.py;." ^
-    --add-data "config_window.py;." ^
+python -m PyInstaller --onefile --noconsole --name=VentoLexOps ^
     --hidden-import=pystray ^
     --hidden-import=PIL ^
-    --hidden-import=win32crypt ^
-    --hidden-import=win32security ^
+    --hidden-import=cryptography ^
     vento_agent.py
 
 if errorlevel 1 (
