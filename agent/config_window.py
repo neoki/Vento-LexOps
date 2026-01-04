@@ -68,16 +68,16 @@ def open_config_window(config_manager, cert_manager):
     list_frame = ttk.Frame(accounts_frame)
     list_frame.pack(fill='both', expand=True, pady=10)
     
-    columns = ('nombre', 'certificado', 'emisor', 'estado')
+    columns = ('nombre', 'certificado', 'tipo', 'estado')
     accounts_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=8)
     accounts_tree.heading('nombre', text='Nombre')
     accounts_tree.heading('certificado', text='Certificado')
-    accounts_tree.heading('emisor', text='Emisor')
+    accounts_tree.heading('tipo', text='Tipo')
     accounts_tree.heading('estado', text='Estado')
     
     accounts_tree.column('nombre', width=120)
     accounts_tree.column('certificado', width=180)
-    accounts_tree.column('emisor', width=80)
+    accounts_tree.column('tipo', width=80)
     accounts_tree.column('estado', width=80)
     
     scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=accounts_tree.yview)
@@ -91,15 +91,21 @@ def open_config_window(config_manager, cert_manager):
             accounts_tree.delete(item)
         
         for account in config_manager.get_accounts():
-            cert = cert_manager.get_certificate_by_thumbprint(account.get('certificate_thumbprint', ''))
-            cert_name = cert.common_name if cert else 'No encontrado'
-            issuer = cert.issuer_type if cert else '-'
+            cert_file = account.get('certificate_file', '')
+            if cert_file:
+                cert_name = os.path.basename(cert_file)
+                cert_type = 'Archivo'
+            else:
+                cert = cert_manager.get_certificate_by_thumbprint(account.get('certificate_thumbprint', ''))
+                cert_name = cert.common_name if cert else 'No encontrado'
+                cert_type = cert.issuer_type if cert else '-'
+            
             status = 'Activo' if account.get('enabled', True) else 'Pausado'
             
             accounts_tree.insert('', 'end', values=(
                 account.get('name', 'Sin nombre'),
                 cert_name,
-                issuer,
+                cert_type,
                 status
             ))
     
@@ -111,7 +117,7 @@ def open_config_window(config_manager, cert_manager):
     def add_account():
         add_window = tk.Toplevel(root)
         add_window.title("Añadir cuenta")
-        add_window.geometry("450x300")
+        add_window.geometry("550x400")
         add_window.transient(root)
         add_window.grab_set()
         
@@ -120,18 +126,70 @@ def open_config_window(config_manager, cert_manager):
         
         ttk.Label(frame, text="Nombre de la cuenta:").grid(row=0, column=0, sticky='w', pady=5)
         name_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=name_var, width=40).grid(row=0, column=1, pady=5)
+        ttk.Entry(frame, textvariable=name_var, width=40).grid(row=0, column=1, columnspan=2, pady=5, sticky='w')
         
-        ttk.Label(frame, text="Seleccionar certificado:").grid(row=1, column=0, sticky='w', pady=5)
+        ttk.Separator(frame, orient='horizontal').grid(row=1, column=0, columnspan=3, sticky='ew', pady=15)
+        
+        cert_source_var = tk.StringVar(value='file')
+        
+        ttk.Radiobutton(frame, text="Seleccionar archivo de certificado (.pfx, .p12):", 
+                        variable=cert_source_var, value='file').grid(row=2, column=0, columnspan=3, sticky='w', pady=5)
+        
+        file_frame = ttk.Frame(frame)
+        file_frame.grid(row=3, column=0, columnspan=3, sticky='ew', padx=20, pady=5)
+        
+        cert_file_var = tk.StringVar()
+        cert_file_entry = ttk.Entry(file_frame, textvariable=cert_file_var, width=45)
+        cert_file_entry.pack(side='left', padx=(0, 5))
+        
+        def browse_cert_file():
+            filetypes = [
+                ("Certificados", "*.pfx *.p12 *.PFX *.P12"),
+                ("PKCS#12", "*.pfx *.p12"),
+                ("Todos los archivos", "*.*")
+            ]
+            filepath = filedialog.askopenfilename(
+                title="Seleccionar certificado digital",
+                filetypes=filetypes,
+                initialdir=os.path.expanduser("~")
+            )
+            if filepath:
+                cert_file_var.set(filepath)
+                cert_source_var.set('file')
+        
+        ttk.Button(file_frame, text="Examinar...", command=browse_cert_file).pack(side='left')
+        
+        ttk.Label(frame, text="Contraseña del certificado:").grid(row=4, column=0, sticky='w', padx=20, pady=5)
+        password_var = tk.StringVar()
+        password_entry = ttk.Entry(frame, textvariable=password_var, width=30, show='*')
+        password_entry.grid(row=4, column=1, sticky='w', pady=5)
+        
+        show_pass_var = tk.BooleanVar(value=False)
+        def toggle_password():
+            password_entry.config(show='' if show_pass_var.get() else '*')
+        ttk.Checkbutton(frame, text="Mostrar", variable=show_pass_var, 
+                        command=toggle_password).grid(row=4, column=2, sticky='w', pady=5)
+        
+        ttk.Separator(frame, orient='horizontal').grid(row=5, column=0, columnspan=3, sticky='ew', pady=15)
+        
+        ttk.Radiobutton(frame, text="Usar certificado del almacén de Windows:", 
+                        variable=cert_source_var, value='store').grid(row=6, column=0, columnspan=3, sticky='w', pady=5)
+        
+        store_frame = ttk.Frame(frame)
+        store_frame.grid(row=7, column=0, columnspan=3, sticky='ew', padx=20, pady=5)
         
         certs = cert_manager.get_valid_certificates()
-        cert_names = [f"{c.common_name} ({c.issuer_type})" for c in certs]
-        cert_var = tk.StringVar()
-        cert_combo = ttk.Combobox(frame, textvariable=cert_var, values=cert_names, width=38, state='readonly')
-        cert_combo.grid(row=1, column=1, pady=5)
+        cert_names = [f"{c.common_name} ({c.issuer_type})" for c in certs] if certs else ["(No se encontraron certificados)"]
+        store_cert_var = tk.StringVar()
+        store_cert_combo = ttk.Combobox(store_frame, textvariable=store_cert_var, values=cert_names, width=50, state='readonly')
+        store_cert_combo.pack(anchor='w')
+        
+        def on_combo_click(event):
+            cert_source_var.set('store')
+        store_cert_combo.bind('<<ComboboxSelected>>', on_combo_click)
         
         enabled_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text="Cuenta activa", variable=enabled_var).grid(row=2, column=0, columnspan=2, sticky='w', pady=10)
+        ttk.Checkbutton(frame, text="Cuenta activa", variable=enabled_var).grid(row=8, column=0, columnspan=3, sticky='w', pady=15)
         
         def save_account():
             name = name_var.get().strip()
@@ -139,25 +197,41 @@ def open_config_window(config_manager, cert_manager):
                 messagebox.showerror("Error", "Introduzca un nombre para la cuenta")
                 return
             
-            cert_idx = cert_combo.current()
-            if cert_idx < 0:
-                messagebox.showerror("Error", "Seleccione un certificado")
-                return
-            
-            cert = certs[cert_idx]
-            
             account = {
                 'name': name,
-                'certificate_thumbprint': cert.thumbprint,
                 'enabled': enabled_var.get()
             }
+            
+            if cert_source_var.get() == 'file':
+                cert_file = cert_file_var.get().strip()
+                if not cert_file:
+                    messagebox.showerror("Error", "Seleccione un archivo de certificado")
+                    return
+                if not os.path.exists(cert_file):
+                    messagebox.showerror("Error", f"El archivo no existe:\n{cert_file}")
+                    return
+                
+                account['certificate_file'] = cert_file
+                account['certificate_password'] = password_var.get()
+                
+            else:
+                cert_idx = store_cert_combo.current()
+                if cert_idx < 0 or not certs:
+                    messagebox.showerror("Error", "Seleccione un certificado del almacén")
+                    return
+                
+                cert = certs[cert_idx]
+                account['certificate_thumbprint'] = cert.thumbprint
             
             config_manager.add_account(account)
             refresh_accounts_list()
             add_window.destroy()
+            messagebox.showinfo("Cuenta añadida", f"La cuenta '{name}' se ha añadido correctamente")
         
-        ttk.Button(frame, text="Guardar", command=save_account).grid(row=3, column=1, sticky='e', pady=20)
-        ttk.Button(frame, text="Cancelar", command=add_window.destroy).grid(row=3, column=0, sticky='w', pady=20)
+        buttons_bottom = ttk.Frame(frame)
+        buttons_bottom.grid(row=9, column=0, columnspan=3, sticky='ew', pady=20)
+        ttk.Button(buttons_bottom, text="Cancelar", command=add_window.destroy).pack(side='left')
+        ttk.Button(buttons_bottom, text="Guardar", command=save_account).pack(side='right')
     
     def remove_account():
         selected = accounts_tree.selection()

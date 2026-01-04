@@ -5,6 +5,7 @@
 selenium>=4.15.0
 pillow>=10.0.0
 pystray>=0.19.0
+cryptography>=41.0.0
 
 # Windows-specific (solo necesario en Windows)
 pywin32>=306; sys_platform == 'win32'

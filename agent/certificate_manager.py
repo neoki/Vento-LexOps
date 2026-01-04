@@ -1,11 +1,12 @@
 """
 Gestor de certificados digitales de Windows para Vento LexOps Agent
-Accede al almacén de certificados de Windows para listar y seleccionar certificados.
+Accede al almacén de certificados de Windows o carga certificados desde archivo.
 """
 
 import sys
+import os
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -235,3 +236,101 @@ class CertificateManager:
         """Filtra certificados por tipo de emisor (FNMT, ACA, DNIe, etc.)"""
         return [cert for cert in self.list_certificates() 
                 if cert.issuer_type.upper() == issuer_type.upper()]
+    
+    def load_certificate_from_file(self, filepath: str, password: str = '') -> Tuple[bool, str]:
+        """
+        Carga un certificado desde archivo .pfx o .p12
+        Retorna (success, message)
+        """
+        if not os.path.exists(filepath):
+            return False, f"El archivo no existe: {filepath}"
+        
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext not in ['.pfx', '.p12']:
+            return False, f"Formato no soportado: {ext}. Use .pfx o .p12"
+        
+        try:
+            from cryptography.hazmat.primitives.serialization import pkcs12
+            from cryptography.hazmat.backends import default_backend
+            from cryptography import x509
+            
+            with open(filepath, 'rb') as f:
+                pfx_data = f.read()
+            
+            pwd = password.encode('utf-8') if password else None
+            
+            try:
+                private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(
+                    pfx_data, pwd, default_backend()
+                )
+            except Exception as e:
+                if 'password' in str(e).lower() or 'mac' in str(e).lower():
+                    return False, "Contraseña incorrecta"
+                return False, f"Error cargando certificado: {e}"
+            
+            if certificate is None:
+                return False, "El archivo no contiene un certificado válido"
+            
+            subject = certificate.subject.rfc4514_string()
+            issuer = certificate.issuer.rfc4514_string()
+            thumbprint = certificate.fingerprint(certificate.signature_hash_algorithm).hex().upper()
+            valid_from = getattr(certificate, 'not_valid_before_utc', certificate.not_valid_before)
+            valid_to = getattr(certificate, 'not_valid_after_utc', certificate.not_valid_after)
+            if hasattr(valid_from, 'replace'):
+                valid_from = valid_from.replace(tzinfo=None) if hasattr(valid_from, 'tzinfo') else valid_from
+                valid_to = valid_to.replace(tzinfo=None) if hasattr(valid_to, 'tzinfo') else valid_to
+            
+            logger.info(f"Certificado cargado: {subject}")
+            return True, f"Certificado válido: {subject}"
+            
+        except ImportError:
+            logger.warning("Librería 'cryptography' no instalada, validación básica")
+            return True, f"Archivo encontrado: {os.path.basename(filepath)} (sin validación)"
+        except Exception as e:
+            return False, f"Error: {e}"
+    
+    def get_certificate_info_from_file(self, filepath: str, password: str = '') -> Optional[CertificateInfo]:
+        """
+        Obtiene información de un certificado desde archivo .pfx o .p12
+        """
+        if not os.path.exists(filepath):
+            return None
+        
+        try:
+            from cryptography.hazmat.primitives.serialization import pkcs12
+            from cryptography.hazmat.backends import default_backend
+            from cryptography.hazmat.primitives import hashes
+            
+            with open(filepath, 'rb') as f:
+                pfx_data = f.read()
+            
+            pwd = password.encode('utf-8') if password else None
+            
+            private_key, certificate, _ = pkcs12.load_key_and_certificates(
+                pfx_data, pwd, default_backend()
+            )
+            
+            if certificate is None:
+                return None
+            
+            subject = certificate.subject.rfc4514_string()
+            issuer = certificate.issuer.rfc4514_string()
+            thumbprint = certificate.fingerprint(hashes.SHA1()).hex().upper()
+            valid_from = getattr(certificate, 'not_valid_before_utc', certificate.not_valid_before)
+            valid_to = getattr(certificate, 'not_valid_after_utc', certificate.not_valid_after)
+            if hasattr(valid_from, 'replace') and hasattr(valid_from, 'tzinfo'):
+                valid_from = valid_from.replace(tzinfo=None)
+                valid_to = valid_to.replace(tzinfo=None)
+            
+            return CertificateInfo(
+                thumbprint=thumbprint,
+                subject=subject,
+                issuer=issuer,
+                valid_from=valid_from,
+                valid_to=valid_to,
+                has_private_key=private_key is not None
+            )
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo info del certificado: {e}")
+            return None
