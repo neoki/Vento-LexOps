@@ -85,13 +85,18 @@ class VentoAgent:
         threading.Thread(target=lambda: open_config_window(self.config, self.cert_manager), daemon=True).start()
     
     def on_open_folder(self, icon, item):
-        """Abre la carpeta de descargas"""
-        folder = self.config.get('download_folder', os.path.expanduser('~/VentoLexNet'))
-        if os.path.exists(folder):
-            os.startfile(folder)
-        else:
+        """Abre la carpeta de descargas en el explorador de Windows"""
+        folder = self.config.get_download_folder()
+        try:
             os.makedirs(folder, exist_ok=True)
-            os.startfile(folder)
+            if sys.platform == 'win32':
+                os.startfile(folder)
+            else:
+                import subprocess
+                subprocess.run(['xdg-open', folder], check=False)
+            logger.info(f"Abriendo carpeta: {folder}")
+        except Exception as e:
+            logger.error(f"Error abriendo carpeta {folder}: {e}")
     
     def on_toggle_pause(self, icon, item):
         """Pausa o reanuda la sincronización automática"""
