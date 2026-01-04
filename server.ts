@@ -45,6 +45,51 @@ if (isProduction) {
   app.use(express.static(path.join(__dirname, 'dist')));
 }
 
+// Serve agent downloads
+app.use('/downloads', express.static(path.join(__dirname, 'public/downloads')));
+
+// Agent download info endpoint
+app.get('/api/agent/download-info', async (req, res) => {
+  try {
+    const agentPath = path.join(__dirname, 'public/downloads/VentoLexOps.exe');
+    const versionPath = path.join(__dirname, 'public/downloads/version.json');
+    
+    let version = '1.0.0';
+    let releaseDate = new Date().toISOString().split('T')[0];
+    let size = 0;
+    let available = false;
+    
+    if (fs.existsSync(versionPath)) {
+      const versionInfo = JSON.parse(fs.readFileSync(versionPath, 'utf-8'));
+      version = versionInfo.version || version;
+      releaseDate = versionInfo.releaseDate || releaseDate;
+    }
+    
+    if (fs.existsSync(agentPath)) {
+      const stats = fs.statSync(agentPath);
+      size = stats.size;
+      available = true;
+    }
+    
+    res.json({
+      available,
+      version,
+      releaseDate,
+      size,
+      sizeFormatted: available ? `${(size / (1024 * 1024)).toFixed(1)} MB` : null,
+      downloadUrl: available ? '/downloads/VentoLexOps.exe' : null,
+      requirements: {
+        os: 'Windows 10/11',
+        browser: 'Microsoft Edge o Google Chrome',
+        certificate: 'Certificado digital instalado (FNMT, ACA, DNIe)'
+      }
+    });
+  } catch (error) {
+    console.error('Error getting agent download info:', error);
+    res.status(500).json({ error: 'Error obteniendo información del agente' });
+  }
+});
+
 async function logAudit(userId: number | null, action: string, targetType: string, targetId: string | number, metadata: any, ipAddress: string | undefined) {
   try {
     await db.insert(auditLogs).values({

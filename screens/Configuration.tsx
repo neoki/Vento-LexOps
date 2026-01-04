@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Building2, Users, Palette, Calendar, FileText, Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { Building2, Users, Palette, Calendar, FileText, Plus, Edit, Trash2, Save, X, Download, Monitor, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface Office {
   id: number;
@@ -28,7 +28,21 @@ interface Category {
   isActive: boolean;
 }
 
-type Tab = 'offices' | 'teams' | 'categories' | 'holidays' | 'deadlines' | 'templates';
+type Tab = 'offices' | 'teams' | 'categories' | 'holidays' | 'deadlines' | 'templates' | 'agent';
+
+interface AgentDownloadInfo {
+  available: boolean;
+  version: string;
+  releaseDate: string;
+  size: number;
+  sizeFormatted: string | null;
+  downloadUrl: string | null;
+  requirements: {
+    os: string;
+    browser: string;
+    certificate: string;
+  };
+}
 
 const Configuration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('offices');
@@ -38,9 +52,23 @@ const Configuration: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
+  const [agentInfo, setAgentInfo] = useState<AgentDownloadInfo | null>(null);
+  const [loadingAgent, setLoadingAgent] = useState(true);
 
   useEffect(() => {
     fetchData();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'agent') {
+      fetch('/api/agent/download-info', { credentials: 'include' })
+        .then(res => res.json())
+        .then(data => {
+          setAgentInfo(data);
+          setLoadingAgent(false);
+        })
+        .catch(() => setLoadingAgent(false));
+    }
   }, [activeTab]);
 
   const fetchData = async () => {
@@ -133,7 +161,8 @@ const Configuration: React.FC = () => {
     { id: 'categories' as Tab, label: 'Categorías/Colores', icon: <Palette size={18} /> },
     { id: 'holidays' as Tab, label: 'Festivos', icon: <Calendar size={18} /> },
     { id: 'deadlines' as Tab, label: 'Reglas de plazos', icon: <Calendar size={18} /> },
-    { id: 'templates' as Tab, label: 'Plantillas', icon: <FileText size={18} /> }
+    { id: 'templates' as Tab, label: 'Plantillas', icon: <FileText size={18} /> },
+    { id: 'agent' as Tab, label: 'Agente Desktop', icon: <Monitor size={18} /> }
   ];
 
   const renderOfficesTab = () => (
@@ -291,6 +320,123 @@ const Configuration: React.FC = () => {
     </div>
   );
 
+  const renderAgentTab = () => {
+    if (loadingAgent) {
+      return (
+        <div className="flex items-center justify-center h-32">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h3 className="font-medium text-lg">Agente de escritorio para Windows</h3>
+          <p className="text-gray-500 mt-1">
+            Aplicación que se ejecuta en segundo plano y descarga automáticamente las notificaciones de LexNET.
+          </p>
+        </div>
+
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-blue-600 rounded-xl">
+              <Monitor className="text-white" size={32} />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-semibold text-lg">Vento LexOps Agent</h4>
+              {agentInfo?.available ? (
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle size={16} />
+                    <span>Disponible para descargar</span>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">Version:</span> {agentInfo.version} 
+                    <span className="mx-2">•</span>
+                    <span className="font-medium">Fecha:</span> {agentInfo.releaseDate}
+                    <span className="mx-2">•</span>
+                    <span className="font-medium">Tamaño:</span> {agentInfo.sizeFormatted}
+                  </div>
+                  <a 
+                    href={agentInfo.downloadUrl || '#'}
+                    download
+                    className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Download size={18} />
+                    Descargar VentoLexOps.exe
+                  </a>
+                </div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <AlertCircle size={16} />
+                    <span>Ejecutable no disponible todavía</span>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    El archivo ejecutable debe ser compilado en Windows y subido a la plataforma.
+                    Contacta con el administrador para obtener el instalador.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="bg-white rounded-xl p-5 border border-gray-200">
+            <h4 className="font-semibold mb-3">Requisitos del sistema</h4>
+            <ul className="space-y-2 text-sm text-gray-600">
+              <li className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                {agentInfo?.requirements?.os || 'Windows 10/11'}
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                {agentInfo?.requirements?.browser || 'Microsoft Edge o Google Chrome'}
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                {agentInfo?.requirements?.certificate || 'Certificado digital instalado'}
+              </li>
+            </ul>
+          </div>
+
+          <div className="bg-white rounded-xl p-5 border border-gray-200">
+            <h4 className="font-semibold mb-3">Características</h4>
+            <ul className="space-y-2 text-sm text-gray-600">
+              <li className="flex items-center gap-2">
+                <CheckCircle size={14} className="text-green-500" />
+                Sincronización automática programable
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle size={14} className="text-green-500" />
+                Soporte para múltiples certificados digitales
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle size={14} className="text-green-500" />
+                Notificaciones cuando hay nuevas descargas
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle size={14} className="text-green-500" />
+                Carpeta de descargas configurable
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 rounded-xl p-5 border border-amber-100">
+          <h4 className="font-semibold text-amber-800 mb-2">Primera ejecución</h4>
+          <p className="text-sm text-amber-700">
+            Cuando inicies el agente por primera vez, Windows mostrará un diálogo para seleccionar 
+            el certificado digital. Después de autenticarte una vez, la sesión se mantiene guardada 
+            y no tendrás que volver a seleccionar el certificado.
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -331,6 +477,7 @@ const Configuration: React.FC = () => {
               {activeTab === 'holidays' && <div className="text-gray-500 text-center py-8">Configuración de festivos próximamente</div>}
               {activeTab === 'deadlines' && <div className="text-gray-500 text-center py-8">Configuración de reglas de plazos próximamente</div>}
               {activeTab === 'templates' && <div className="text-gray-500 text-center py-8">Configuración de plantillas próximamente</div>}
+              {activeTab === 'agent' && renderAgentTab()}
             </>
           )}
         </div>

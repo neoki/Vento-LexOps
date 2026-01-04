@@ -41,6 +41,32 @@ pyinstaller --onefile --windowed --icon=vento.ico --name=VentoLexOps vento_agent
 
 El ejecutable se generará en la carpeta `dist/`.
 
+### Opción 3: Descargar desde la plataforma (recomendado para usuarios)
+
+1. Inicia sesión en Vento LexOps
+2. Ve a **Configuración** → **Agente Desktop**
+3. Haz clic en **Descargar VentoLexOps.exe**
+
+## Distribución del ejecutable
+
+Para que los usuarios puedan descargar el agente desde la plataforma:
+
+1. Compila el ejecutable en Windows con `build.bat`
+2. Copia `dist/VentoLexOps.exe` a `public/downloads/VentoLexOps.exe` en el servidor
+3. Actualiza `public/downloads/version.json` con la nueva versión:
+
+```json
+{
+  "version": "1.0.0",
+  "releaseDate": "2025-01-04",
+  "changelog": [
+    "Primera versión del agente"
+  ]
+}
+```
+
+La plataforma mostrará automáticamente el enlace de descarga cuando el archivo esté disponible.
+
 ## Uso
 
 1. **Primera ejecución**: El agente aparecerá como icono en la bandeja del sistema (junto al reloj)

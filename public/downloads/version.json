@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "releaseDate": "2025-01-04",
+  "changelog": [
+    "Primera versión del agente Vento LexOps",
+    "Sincronización automática con LexNET",
+    "Soporte para múltiples certificados digitales",
+    "Notificaciones de nuevas descargas"
+  ]
+}
