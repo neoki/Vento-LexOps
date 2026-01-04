@@ -11,7 +11,7 @@ import * as msGraph from './server/microsoft-graph';
 import * as inventoApi from './server/invento-api';
 import configApi from './server/config-api';
 import packagesApi from './server/packages-api';
-import { notifications, agents, agentLogs, users, userAiSettings, auditLogs, lexnetPackages, documents, executionPlans, executionActions } from './shared/schema';
+import { notifications, agents, agentLogs, users, userAiSettings, auditLogs, lexnetPackages, documents, executionPlans, executionActions, lexnetAccounts } from './shared/schema';
 import { eq, desc, sql, and } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -497,7 +497,7 @@ app.put('/api/offices/:id/ai-settings', requireAuth, requireRole('ADMIN'), async
   }
 });
 
-app.get('/api/agents', async (req, res) => {
+app.get('/api/agents', requireAuth, async (req, res) => {
   try {
     const allAgents = await db
       .select()
@@ -507,6 +507,77 @@ app.get('/api/agents', async (req, res) => {
   } catch (error) {
     console.error('Agents error:', error);
     res.status(500).json({ error: 'Error obteniendo agentes' });
+  }
+});
+
+app.delete('/api/agents/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const agentId = parseInt(req.params.id);
+    
+    // First, unlink any lexnet_accounts associated with this agent
+    await db
+      .update(lexnetAccounts)
+      .set({ agentId: null })
+      .where(eq(lexnetAccounts.agentId, agentId));
+    
+    // Delete agent logs
+    await db.delete(agentLogs).where(eq(agentLogs.agentId, agentId));
+    
+    // Update any packages to remove agent reference
+    await db
+      .update(lexnetPackages)
+      .set({ agentId: null })
+      .where(eq(lexnetPackages.agentId, agentId));
+    
+    // Finally delete the agent
+    const [deleted] = await db
+      .delete(agents)
+      .where(eq(agents.id, agentId))
+      .returning();
+    
+    if (!deleted) {
+      return res.status(404).json({ error: 'Agente no encontrado' });
+    }
+    
+    await logAudit(
+      req.user!.id,
+      'DELETE_AGENT',
+      'agent',
+      String(agentId),
+      { agentName: deleted.name },
+      req.ip
+    );
+    
+    res.json({ success: true, message: 'Agente desvinculado correctamente' });
+  } catch (error) {
+    console.error('Delete agent error:', error);
+    res.status(500).json({ error: 'Error desvinculando agente' });
+  }
+});
+
+app.put('/api/agents/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const agentId = parseInt(req.params.id);
+    const { name, pollingIntervalSeconds } = req.body;
+    
+    const [updated] = await db
+      .update(agents)
+      .set({
+        name: name,
+        pollingIntervalSeconds: pollingIntervalSeconds,
+        updatedAt: new Date()
+      })
+      .where(eq(agents.id, agentId))
+      .returning();
+    
+    if (!updated) {
+      return res.status(404).json({ error: 'Agente no encontrado' });
+    }
+    
+    res.json(updated);
+  } catch (error) {
+    console.error('Update agent error:', error);
+    res.status(500).json({ error: 'Error actualizando agente' });
   }
 });
 
