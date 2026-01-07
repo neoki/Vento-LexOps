@@ -678,6 +678,36 @@ python -m PyInstaller --onefile vento_agent.py
 
 ---
 
+---
+
+## Estado de Implementación
+
+### Funcionalidades Completas
+
+| Componente | Estado | Notas |
+|------------|--------|-------|
+| Enumeración de certificados Windows (PowerShell) | Completo | Lista certificados reales del almacén |
+| Validación de archivos .pfx/.p12 | Completo | Valida formato y contraseña |
+| Detección de notificaciones LexNET | Completo | Lee bandeja sin descargar |
+| Icono en bandeja del sistema | Completo | Menú dinámico con pystray |
+| Ventana de configuración Tkinter | Completo | General + Cuentas/Certificados |
+
+### Funcionalidades Parciales
+
+| Componente | Estado | Limitaciones |
+|------------|--------|--------------|
+| Carga de certificados desde archivo | Parcial | Valida el archivo pero no lo instala en el almacén de Windows |
+| Ventana de notificaciones pendientes | Parcial | Implementación básica en vento_agent.py |
+| Descarga de notificaciones seleccionadas | Parcial | Flujo completo requiere pruebas en entorno real |
+
+### Dependencias Externas
+
+- **PowerShell**: Requerido para listar certificados (incluido en Windows 10/11)
+- **Selenium + WebDriver**: Requerido para automatización del navegador
+- **Tkinter**: Incluido con Python estándar
+
+---
+
 ## Historial de Versiones
 
 | Versión | Fecha | Cambios |
