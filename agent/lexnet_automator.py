@@ -29,7 +29,9 @@ LEXNET_INBOX_URL = f"{LEXNET_URL}/lexnetcomunicaciones/bandeja"
 
 class NotificationInfo:
     def __init__(self, notification_id: str, court: str, procedure_number: str,
-                 notification_type: str, received_date: datetime, is_urgent: bool = False):
+                 notification_type: str, received_date: datetime, is_urgent: bool = False,
+                 account_name: str = '', certificate_thumbprint: str = '', certificate_file: str = '',
+                 certificate_password: str = ''):
         self.notification_id = notification_id
         self.court = court
         self.procedure_number = procedure_number
@@ -39,6 +41,10 @@ class NotificationInfo:
         self.downloaded = False
         self.download_path: Optional[str] = None
         self.files: List[str] = []
+        self.account_name = account_name
+        self.certificate_thumbprint = certificate_thumbprint
+        self.certificate_file = certificate_file
+        self.certificate_password = certificate_password
 
 
 class LexNetAutomator:
@@ -381,6 +387,56 @@ Descargado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
         except Exception as e:
             logger.error(f"Error descargando notificación {notification.notification_id}: {e}")
             return False
+    
+    def check_notifications(self) -> List[NotificationInfo]:
+        """
+        Solo revisa las notificaciones pendientes SIN descargarlas.
+        Útil para avisar al usuario antes de descargar.
+        """
+        notifications = []
+        
+        try:
+            if not self.login():
+                logger.error("No se pudo iniciar sesión en LexNET")
+                return notifications
+            
+            notifications = self.get_pending_notifications()
+            logger.info(f"Revisión completada: {len(notifications)} notificaciones pendientes")
+            
+        except Exception as e:
+            logger.error(f"Error revisando notificaciones: {e}")
+        finally:
+            self.close()
+        
+        return notifications
+    
+    def download_notifications(self, notifications: List[NotificationInfo]) -> int:
+        """
+        Descarga una lista de notificaciones específicas.
+        Devuelve el número de notificaciones descargadas exitosamente.
+        """
+        if not notifications:
+            return 0
+            
+        downloaded = 0
+        
+        try:
+            if not self.login():
+                logger.error("No se pudo iniciar sesión en LexNET")
+                return 0
+            
+            for notification in notifications:
+                if self.download_notification(notification):
+                    downloaded += 1
+            
+            logger.info(f"Descarga completada: {downloaded} notificaciones")
+            
+        except Exception as e:
+            logger.error(f"Error descargando notificaciones: {e}")
+        finally:
+            self.close()
+        
+        return downloaded
     
     def sync_notifications(self) -> int:
         """Sincroniza todas las notificaciones pendientes. Devuelve el número de nuevas."""
