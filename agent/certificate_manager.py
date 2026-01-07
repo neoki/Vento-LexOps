@@ -78,69 +78,90 @@ class CertificateManager:
         self._certificates = []
         
         if sys.platform != 'win32':
-            logger.warning("CertificateManager solo funciona en Windows")
-            return self._get_mock_certificates()
+            logger.warning("CertificateManager solo funciona en Windows - ejecute desde Windows")
+            return []
         
         try:
             self._certificates = self._load_windows_certificates()
         except Exception as e:
-            logger.error(f"Error cargando certificados: {e}")
-            return self._get_mock_certificates()
+            logger.error(f"Error cargando certificados del almacén de Windows: {e}")
+            return []
         
         self._loaded = True
         return self._certificates
     
     def _load_windows_certificates(self) -> List[CertificateInfo]:
-        """Carga certificados del almacén de Windows usando win32crypt"""
+        """Carga certificados del almacén de Windows usando PowerShell (más fiable)"""
         certificates = []
         
         try:
-            import win32crypt
-            import win32security
+            import subprocess
+            import json
             
-            store = win32crypt.CertOpenStore(
-                win32crypt.CERT_STORE_PROV_SYSTEM,
-                0,
-                None,
-                win32crypt.CERT_SYSTEM_STORE_CURRENT_USER,
-                "MY"
+            ps_command = '''
+$certs = Get-ChildItem -Path Cert:\\CurrentUser\\My | Where-Object { $_.HasPrivateKey }
+$result = @()
+foreach ($cert in $certs) {
+    $result += @{
+        Thumbprint = $cert.Thumbprint
+        Subject = $cert.Subject
+        Issuer = $cert.Issuer
+        NotBefore = $cert.NotBefore.ToString('yyyy-MM-ddTHH:mm:ss')
+        NotAfter = $cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss')
+        HasPrivateKey = $cert.HasPrivateKey
+    }
+}
+$result | ConvertTo-Json -Compress
+'''
+            
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command', ps_command],
+                capture_output=True, text=True, timeout=30
             )
             
-            cert = None
-            while True:
-                cert = win32crypt.CertEnumCertificatesInStore(store, cert)
-                if cert is None:
-                    break
-                
+            if result.returncode != 0:
+                logger.error(f"PowerShell error: {result.stderr}")
+                return []
+            
+            output = result.stdout.strip()
+            if not output or output == 'null':
+                logger.info("No se encontraron certificados con clave privada")
+                return []
+            
+            data = json.loads(output)
+            
+            if isinstance(data, dict):
+                data = [data]
+            
+            for cert_data in data:
                 try:
-                    cert_context = cert
+                    valid_from = datetime.fromisoformat(cert_data['NotBefore'])
+                    valid_to = datetime.fromisoformat(cert_data['NotAfter'])
                     
-                    subject = self._get_cert_name(cert_context, win32crypt.CERT_NAME_SIMPLE_DISPLAY_TYPE)
-                    issuer = self._get_cert_issuer(cert_context)
-                    thumbprint = self._get_thumbprint(cert_context)
-                    valid_from, valid_to = self._get_validity(cert_context)
-                    has_private_key = self._check_private_key(cert_context)
+                    cert_info = CertificateInfo(
+                        thumbprint=cert_data['Thumbprint'],
+                        subject=cert_data['Subject'],
+                        issuer=cert_data['Issuer'],
+                        valid_from=valid_from,
+                        valid_to=valid_to,
+                        has_private_key=cert_data['HasPrivateKey']
+                    )
+                    certificates.append(cert_info)
+                    logger.debug(f"Certificado cargado: {cert_info.common_name}")
                     
-                    if has_private_key and valid_from and valid_to:
-                        cert_info = CertificateInfo(
-                            thumbprint=thumbprint,
-                            subject=subject,
-                            issuer=issuer,
-                            valid_from=valid_from,
-                            valid_to=valid_to,
-                            has_private_key=has_private_key
-                        )
-                        certificates.append(cert_info)
-                        
                 except Exception as e:
                     logger.debug(f"Error procesando certificado: {e}")
                     continue
             
-            win32crypt.CertCloseStore(store, 0)
-            
-        except ImportError:
-            logger.warning("win32crypt no disponible, usando certificados de prueba")
-            return self._get_mock_certificates()
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout obteniendo certificados de Windows")
+            return []
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parseando respuesta de PowerShell: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error accediendo al almacén de certificados: {e}")
+            return []
         
         logger.info(f"Encontrados {len(certificates)} certificados con clave privada")
         return certificates
@@ -177,10 +198,48 @@ class CertificateManager:
             return ""
     
     def _get_validity(self, cert):
-        """Obtiene las fechas de validez del certificado"""
+        """Obtiene las fechas de validez del certificado desde PCCERT_CONTEXT"""
         try:
-            return datetime.now(), datetime.now().replace(year=datetime.now().year + 1)
-        except:
+            import win32crypt
+            import ctypes
+            from ctypes import wintypes
+            
+            cert_info = cert[0]
+            not_before = cert_info['NotBefore']
+            not_after = cert_info['NotAfter']
+            
+            valid_from = datetime(
+                not_before.year, not_before.month, not_before.day,
+                not_before.hour, not_before.minute, not_before.second
+            )
+            valid_to = datetime(
+                not_after.year, not_after.month, not_after.day,
+                not_after.hour, not_after.minute, not_after.second
+            )
+            
+            return valid_from, valid_to
+        except Exception as e:
+            logger.debug(f"Error obteniendo fechas de validez via struct: {e}")
+            try:
+                import subprocess
+                thumbprint = self._get_thumbprint(cert)
+                if thumbprint:
+                    result = subprocess.run(
+                        ['powershell', '-Command', 
+                         f"$cert = Get-ChildItem -Path Cert:\\CurrentUser\\My\\{thumbprint}; "
+                         f"@{{NotBefore=$cert.NotBefore.ToString('yyyy-MM-ddTHH:mm:ss'); NotAfter=$cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss')}} | ConvertTo-Json"],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        import json
+                        data = json.loads(result.stdout)
+                        if 'NotBefore' in data and 'NotAfter' in data:
+                            valid_from = datetime.fromisoformat(data['NotBefore'])
+                            valid_to = datetime.fromisoformat(data['NotAfter'])
+                            return valid_from, valid_to
+            except Exception as ps_error:
+                logger.debug(f"Error obteniendo fechas via PowerShell: {ps_error}")
+            
             return None, None
     
     def _check_private_key(self, cert) -> bool:

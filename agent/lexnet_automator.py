@@ -13,9 +13,11 @@ Para uso desatendido, se puede:
 """
 
 import os
+import re
 import time
 import logging
 import shutil
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -252,7 +254,10 @@ class LexNetAutomator:
             logger.debug(f"Error automatizando dialogo: {e}")
     
     def get_pending_notifications(self) -> List[NotificationInfo]:
-        """Obtiene la lista de notificaciones pendientes"""
+        """
+        Obtiene la lista de notificaciones pendientes de la bandeja de LexNET.
+        Solo lee la tabla SIN descargar nada.
+        """
         notifications = []
         
         if not self.driver:
@@ -264,50 +269,207 @@ class LexNetAutomator:
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
             
-            logger.info("Navegando a bandeja de entrada...")
+            logger.info("Accediendo a bandeja de entrada de LexNET...")
             
             try:
-                inbox_link = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Bandeja') or contains(text(), 'Entrada')]"))
-                )
-                inbox_link.click()
-            except:
-                self.driver.get(f"{LEXNET_URL}/lexnet/bandeja")
-            
-            time.sleep(2)
-            
-            try:
-                rows = self.driver.find_elements(By.CSS_SELECTOR, "table.notificaciones tbody tr, .notification-row, .lista-notificaciones tr")
+                inbox_selectors = [
+                    "//a[contains(text(), 'Bandeja')]",
+                    "//a[contains(text(), 'Entrada')]",
+                    "//a[contains(text(), 'Notificaciones')]",
+                    "//a[contains(@href, 'bandeja')]",
+                    "//a[contains(@href, 'inbox')]",
+                    "//li[contains(@class, 'bandeja')]//a",
+                ]
                 
-                for idx, row in enumerate(rows):
+                clicked = False
+                for selector in inbox_selectors:
                     try:
-                        cells = row.find_elements(By.TAG_NAME, "td")
-                        if len(cells) >= 3:
-                            notification = NotificationInfo(
-                                notification_id=f"NOTIF-{datetime.now().strftime('%Y%m%d')}-{idx:04d}",
-                                court=cells[0].text if len(cells) > 0 else "Juzgado",
-                                procedure_number=cells[1].text if len(cells) > 1 else "Procedimiento",
-                                notification_type=cells[2].text if len(cells) > 2 else "Notificación",
-                                received_date=datetime.now(),
-                                is_urgent='urgente' in row.text.lower()
-                            )
-                            notifications.append(notification)
+                        inbox_link = WebDriverWait(self.driver, 3).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                        inbox_link.click()
+                        clicked = True
+                        logger.info(f"Accedido a bandeja via: {selector}")
+                        break
                     except:
                         continue
-                        
+                
+                if not clicked:
+                    self.driver.get(f"{LEXNET_URL}/lexnetcomunicaciones/bandeja")
+                    logger.info("Acceso directo a URL de bandeja")
+                    
             except Exception as e:
-                logger.debug(f"Error parseando tabla: {e}")
+                logger.warning(f"Error navegando a bandeja: {e}")
+                self.driver.get(f"{LEXNET_URL}/lexnetcomunicaciones/bandeja")
             
-            if not notifications:
-                logger.info("No se encontraron notificaciones o página vacía")
-                notifications = self._get_mock_notifications()
+            time.sleep(3)
             
-            logger.info(f"Encontradas {len(notifications)} notificaciones")
+            table_selectors = [
+                "table tbody tr",
+                "table.tabla tbody tr",
+                ".tabla-notificaciones tr",
+                ".notification-row",
+                ".lista-notificaciones tr",
+                "#tablaNotificaciones tbody tr",
+                ".dataTables_wrapper tbody tr",
+                "table[class*='notif'] tbody tr",
+            ]
+            
+            rows = []
+            for selector in table_selectors:
+                try:
+                    rows = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    if rows:
+                        logger.info(f"Encontradas {len(rows)} filas con selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not rows:
+                page_text = self.driver.page_source.lower()
+                if 'no hay notificaciones' in page_text or 'sin notificaciones' in page_text:
+                    logger.info("La bandeja está vacía - no hay notificaciones pendientes")
+                    return []
+                
+                logger.warning("No se encontró tabla de notificaciones - verificando página...")
+                logger.debug(f"URL actual: {self.driver.current_url}")
+                
+                try:
+                    screenshot_path = Path(os.environ.get('LOCALAPPDATA', '')) / 'VentoLexOps' / 'debug_screenshot.png'
+                    self.driver.save_screenshot(str(screenshot_path))
+                    logger.info(f"Screenshot guardado en: {screenshot_path}")
+                except:
+                    pass
+                
+                return []
+            
+            for idx, row in enumerate(rows):
+                try:
+                    row_text = row.text.strip()
+                    if not row_text or len(row_text) < 10:
+                        continue
+                    
+                    cells = row.find_elements(By.TAG_NAME, "td")
+                    if len(cells) < 2:
+                        continue
+                    
+                    notification_id = None
+                    
+                    row_id = row.get_attribute('id')
+                    if row_id:
+                        notification_id = row_id
+                    
+                    data_id = row.get_attribute('data-id') or row.get_attribute('data-notificacion-id')
+                    if data_id:
+                        notification_id = data_id
+                    
+                    try:
+                        links = row.find_elements(By.TAG_NAME, "a")
+                        for link in links:
+                            href = link.get_attribute('href') or ''
+                            onclick = link.get_attribute('onclick') or ''
+                            combined = href + ' ' + onclick
+                            
+                            ver_match = re.search(r"verNotificacion\s*\(\s*['\"]?(\d+)['\"]?\s*\)", combined, re.IGNORECASE)
+                            if ver_match:
+                                notification_id = f"LEXNET-{ver_match.group(1)}"
+                                break
+                            
+                            ver_match2 = re.search(r"ver[A-Za-z]*\s*\(\s*['\"]?(\d+)['\"]?\s*\)", combined, re.IGNORECASE)
+                            if ver_match2:
+                                notification_id = f"LEXNET-{ver_match2.group(1)}"
+                                break
+                            
+                            id_match = re.search(r'[?&]id[=](\d+)', href, re.IGNORECASE)
+                            if id_match:
+                                notification_id = f"LEXNET-{id_match.group(1)}"
+                                break
+                            
+                            notif_match = re.search(r'notificacion[es]?[=/](\d+)', href, re.IGNORECASE)
+                            if notif_match:
+                                notification_id = f"LEXNET-{notif_match.group(1)}"
+                                break
+                    except:
+                        pass
+                    
+                    try:
+                        checkbox = row.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                        cb_value = checkbox.get_attribute('value') or checkbox.get_attribute('name')
+                        if cb_value and cb_value.isdigit():
+                            notification_id = f"LEXNET-{cb_value}"
+                    except:
+                        pass
+                    
+                    if not notification_id:
+                        stable_text = ""
+                        for cell in cells[:3]:
+                            cell_text = cell.text.strip()
+                            cell_text = re.sub(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', '', cell_text)
+                            cell_text = re.sub(r'\d{1,2}:\d{2}(:\d{2})?', '', cell_text)
+                            stable_text += cell_text.lower().strip() + "|"
+                        row_hash = hashlib.md5(stable_text.encode()).hexdigest()[:12]
+                        notification_id = f"LEXNET-HASH-{row_hash}"
+                    
+                    court = ""
+                    procedure = ""
+                    notif_type = ""
+                    received_date = datetime.now()
+                    
+                    for i, cell in enumerate(cells):
+                        cell_text = cell.text.strip()
+                        cell_lower = cell_text.lower()
+                        
+                        if 'juzgado' in cell_lower or 'tribunal' in cell_lower or 'audiencia' in cell_lower or 'sala' in cell_lower:
+                            court = cell_text
+                        elif '/' in cell_text and any(c.isdigit() for c in cell_text):
+                            if not procedure:
+                                procedure = cell_text
+                        elif 'providencia' in cell_lower or 'sentencia' in cell_lower or 'auto' in cell_lower or 'decreto' in cell_lower or 'diligencia' in cell_lower:
+                            notif_type = cell_text
+                        else:
+                            date_match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})', cell_text)
+                            if date_match:
+                                try:
+                                    day, month, year = date_match.groups()
+                                    year = int(year)
+                                    if year < 100:
+                                        year += 2000
+                                    received_date = datetime(year, int(month), int(day))
+                                except:
+                                    pass
+                    
+                    if not court and len(cells) > 0:
+                        court = cells[0].text.strip()
+                    if not procedure and len(cells) > 1:
+                        procedure = cells[1].text.strip()
+                    if not notif_type and len(cells) > 2:
+                        notif_type = cells[2].text.strip()
+                    
+                    is_urgent = any(word in row_text.lower() for word in ['urgente', 'plazo', 'vencimiento', 'inmediato'])
+                    
+                    notification = NotificationInfo(
+                        notification_id=notification_id,
+                        court=court or "Órgano judicial",
+                        procedure_number=procedure or "Sin número",
+                        notification_type=notif_type or "Notificación",
+                        received_date=received_date,
+                        is_urgent=is_urgent
+                    )
+                    notifications.append(notification)
+                    logger.debug(f"Notificación detectada ID={notification_id}: {court} - {procedure}")
+                    
+                except Exception as e:
+                    logger.debug(f"Error parseando fila {idx}: {e}")
+                    continue
+            
+            logger.info(f"Total: {len(notifications)} notificaciones pendientes detectadas")
             return notifications
             
         except Exception as e:
             logger.error(f"Error obteniendo notificaciones: {e}")
-            return self._get_mock_notifications()
+            import traceback
+            logger.debug(traceback.format_exc())
+            return []
     
     def _get_mock_notifications(self) -> List[NotificationInfo]:
         """Devuelve notificaciones de prueba para desarrollo"""
